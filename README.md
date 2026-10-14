@@ -18,7 +18,7 @@ Add `?quality=low` to the URL on a slow device (no antialiasing, small shadow ma
 | Tool | Key | What it does |
 | --- | --- | --- |
 | Knife | `1` | Hold and drag across the word to cut. Cuts snap to the nearest letter gap. Tap a piece to hear it. |
-| Hand | `2` | Pick up a piece (or a whole stuck-together cluster) and carry it across the board. Push the end of one piece against the end of another and they snap together. **Shake** a piece to pull it off. |
+| Hand | `2` | Pick up a piece (or a whole stuck-together cluster) and slide it left or right. Push the end of one piece against the end of another and they snap together, which rejoins that gap in the word. **Shake** a piece, or **slice the joint with the knife**, to pull it apart (that cuts the gap again). |
 | Vowel brush | `3` | Drag over letters to paint them as vowels. |
 | Consonant brush | `4` | Drag over letters to paint them as consonants. |
 | Eraser | `5` | Removes paint. |
@@ -28,7 +28,7 @@ Add `?quality=low` to the URL on a slow device (no antialiasing, small shadow ma
 Settings (saved in the browser): **Level** (Easy 2 syllables, Medium 3, Hard 4+, Mixed), **Tasks** (slice +
 paint, slice only, paint only), **Theme** (Wooden Toys, Candy, Ocean, Space, High Contrast), sound on/off.
 The High Contrast theme uses an orange/blue brush pair that stays distinguishable for common kinds of colour
-blindness. **Check** grades where you cut and how you painted, not what is stuck together.
+blindness. **Check** grades the cuts you see: pieces that are neighbours in the word and stuck together count as uncut.
 
 ## How it works
 
@@ -48,7 +48,7 @@ blindness. **Check** grades where you cut and how you painted, not what is stuck
 - **Magnets** – every piece has a north face on its right and a south face on its left. Opposite poles attract
   and like poles repel, with a softened inverse-square force applied at four pole points per face, so the
   torque that flattens two faces against each other comes from the physics. Pieces that meet closely and
-  slowly snap flush and are welded into a cluster; the bond's load is read from the constraint solver.
+  slowly snap flush and are welded into a cluster (if they are neighbours in the word, that gap is rejoined); the bond's load is read from the constraint solver.
   Magnets only act on pieces that have been picked up (while held and for five seconds after), so freshly cut
   pieces do not drag each other back together.
 - **Words** – a hand-checked list in `js/words.js` (syllables joined with `-`, `|` for accepted alternative
@@ -59,16 +59,19 @@ blindness. **Check** grades where you cut and how you painted, not what is stuck
 - **Sound** – effects are synthesised with Web Audio. Syllables are read with the browser's speech synthesis,
   so voice quality depends on the device.
 
-Deliberate fudges, for readability and playability:
+Deliberate rules, for readability and playability:
 
-1. Pieces cannot pitch forward or backward, so letters always face the camera. They can still yaw, roll and
-   slide in depth.
-2. A piece that settles on its side, or turned well away from the camera, hops itself upright.
-3. Pieces are kept on the board by invisible walls.
-4. Magnets are switched on by picking a piece up (above), and pulling stuck pieces apart is a shake gesture,
-   because a mouse cannot pull two magnets apart the way two hands can. A bond also breaks if a cluster is
-   slammed hard enough.
-5. Letters are decals on the block faces, not extruded 3D text.
+1. Blocks never rotate and never move toward or away from the viewer. They fall, slide left and right, and are
+   lifted by the hand, so letters always stay upright and face you.
+2. The board is very grippy (friction 2.0 against the blocks), so blocks stop where they land.
+3. Every cut slides the two sides of the row apart by a few centimetres (as rigid groups, so stuck clusters are
+   not torn) so a cut is always visible. The pop after a cut peaks below a block's height so a piece cannot
+   hop over its neighbour.
+4. Pieces are kept on the board by invisible walls.
+5. Magnets are switched on by picking a piece up (above), and pulling stuck pieces apart is a shake or a knife
+   stroke, because a mouse cannot pull two magnets apart the way two hands can. A bond also breaks if a
+   cluster is slammed hard enough.
+6. Letters are decals on the block faces, not extruded 3D text.
 
 ## Layout
 

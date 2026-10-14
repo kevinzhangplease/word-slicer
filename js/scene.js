@@ -228,7 +228,7 @@ export class Scene3D {
     // tiles big enough to slice.
     const portrait = W / H < 0.8;
     const bx = Math.max(nLetters * TILE.w * 0.62, portrait ? 0.9 : 1.25);
-    const bz = portrait ? 1.1 : 0.8;
+    const bz = 0.55; // blocks only move left/right, so the board only needs to be a little deeper than a block
     this.bx = bx;
     this.bz = bz;
     const cam = this.camera;
@@ -385,7 +385,6 @@ export class Scene3D {
     const th = this.theme;
     const bodies = game.physics.pieces();
     const alive = new Set();
-    const pw = game.pointerWorld;
     for (const body of bodies) {
       alive.add(body.id);
       const e = this.pieces.get(body.id) || this.build(body);
@@ -395,13 +394,6 @@ export class Scene3D {
       const sq = p.sq;
       e.vis.scale.set(1 + sq * 0.5, 1 - sq, 1 + sq * 0.3);
       e.vis.position.y = -(TILE.h / 2) * sq;
-      let wob = 0;
-      if (pw && !game.reduced && (game.tool === 'knife' || game.tool === 'hand')) {
-        const d = Math.hypot(pw.x - body.position.x, pw.z - body.position.z);
-        const prox = clamp(1 - d / (0.55 + p.len * TILE.w * 0.5), 0, 1);
-        wob = Math.sin(now * 0.03 + p.start) * 0.04 * prox * prox;
-      }
-      e.vis.rotation.z = wob;
       const calm = body.velocity.lengthSquared() < 0.01 && !game.reduced;
       for (const t of e.tiles) {
         const letter = game.letters[t.gi];

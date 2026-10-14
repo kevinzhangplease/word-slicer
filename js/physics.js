@@ -15,10 +15,14 @@ const LIFT_MIN = 0.02;
 const SHAKE_REVERSALS = 4;
 const SHAKE_AMP = 0.12;
 const SHAKE_WINDOW = 700;
+// A cut always opens a visible gap: each side of the row slides this far (m) away from the cut. With a
+// grippy board the sideways kick alone cannot push neighbours aside, so whole sides move together.
+const CUT_SPREAD = 0.05;
+const CUT_SPREAD_STEPS = 8;
 
 // 3D rigid-body physics (cannon-es). A piece is one compound body: a box shape per letter tile.
-// Pitching forward/back is locked (angularFactor) so letters always face the camera; pieces can still
-// yaw, roll, tumble in the screen plane and slide in depth.
+// Pieces never rotate (angularFactor 0), so letters stay upright and face the viewer, and never move
+// toward or away from the viewer (linearFactor z = 0): they slide left/right, fall, and are lifted.
 export class Physics {
   constructor(onImpact) {
     this.onImpact = onImpact;
@@ -27,17 +31,23 @@ export class Physics {
     this.world.allowSleep = false;
     this.world.solver.iterations = 30;
     this.world.solver.tolerance = 1e-5;
-    const m = this.world.defaultContactMaterial;
-    m.friction = 0.5; // wood on wood
-    m.restitution = 0.18;
-    m.contactEquationStiffness = 1e7;
-    m.contactEquationRelaxation = 3;
+    // Blocks should stop where they land, not skate around: high friction against the board, a bit less
+    // block on block (so a block can still be slid against another).
+    this.groundMat = new CANNON.Material('ground');
+    this.blockMat = new CANNON.Material('block');
+    const cm = (a, b, friction) => {
+      const c = new CANNON.ContactMaterial(a, b, { friction, restitution: 0.12, contactEquationStiffness: 1e7, contactEquationRelaxation: 3 });
+      this.world.addContactMaterial(c);
+    };
+    cm(this.groundMat, this.blockMat, 2.0);
+    cm(this.blockMat, this.blockMat, 0.9);
     this.timeScale = 1;
     this.acc = 0;
     this.statics = [];
     this.floor = null;
     this.bounds = { bx: 1.5, bz: 0.95 };
     this.hand = null;
+    this.spreads = [];
     this.clock = () => performance.now(); // injectable so tests can run faster than real time
     this.magnets = new Magnets(this);
   }
@@ -47,7 +57,7 @@ export class Physics {
     this.bounds = { bx, bz };
     for (const b of this.statics) this.world.removeBody(b);
     const mk = (hx, hy, hz, x, y, z) => {
-      const b = new CANNON.Body({ mass: 0 });
+      const b = new CANNON.Body({ mass: 0, material: this.groundMat });
       b.addShape(new CANNON.Box(new CANNON.Vec3(hx, hy, hz)));
       b.position.set(x, y, z);
       this.world.addBody(b);
@@ -65,19 +75,19 @@ export class Physics {
 
   pieces() { return this.world.bodies.filter((b) => b.piece); }
 
-  addPiece(start, end, x, y, z, yaw = 0, now = performance.now()) {
+  addPiece(start, end, x, y, z, _unused = 0, now = performance.now()) {
     const len = end - start;
     const body = new CANNON.Body({
       mass: TILE.mass * len,
-      angularFactor: new CANNON.Vec3(0, 1, 1),
+      material: this.blockMat,
+      angularFactor: new CANNON.Vec3(0, 0, 0),
+      linearFactor: new CANNON.Vec3(1, 1, 0),
       linearDamping: 0.02,
-      angularDamping: 0.12,
     });
     const half = new CANNON.Vec3(TILE.w / 2 - 0.0004, TILE.h / 2, TILE.d / 2);
     for (let i = 0; i < len; i++) body.addShape(new CANNON.Box(half), new CANNON.Vec3(-(len * TILE.w) / 2 + (i + 0.5) * TILE.w, 0, 0));
     body.position.set(x, y, z);
-    body.quaternion.setFromEuler(0, yaw, 0);
-    body.piece = { start, end, len, born: now, noCutUntil: now + 220, sq: 0, sqV: 0, rightAt: 0, magnetUntil: 0 };
+        body.piece = { start, end, len, born: now, noCutUntil: now + 220, sq: 0, sqV: 0, rightAt: 0, magnetUntil: 0 };
     body.addEventListener('collide', (e) => {
       const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
       if (v < 0.5) return;
@@ -96,6 +106,7 @@ export class Physics {
   }
 
   clear() {
+    this.spreads = [];
     this.release();
     this.magnets.clear();
     for (const b of this.pieces()) this.world.removeBody(b);
@@ -106,36 +117,60 @@ export class Physics {
   splitPiece(body, k, sw, now) {
     const p = body.piece;
     const w = p.len * TILE.w;
-    const q = body.quaternion.clone();
-    const axis = q.vmult(new CANNON.Vec3(1, 0, 0));
+    const axis = new CANNON.Vec3(1, 0, 0);
     const make = (xloc, start, end, dir) => {
       const wp = body.pointToWorldFrame(new CANNON.Vec3(xloc, 0, 0));
       const nb = this.addPiece(start, end, wp.x, wp.y, wp.z, 0, now);
-      nb.quaternion.copy(q);
       const v = body.getVelocityAtWorldPoint(wp, new CANNON.Vec3());
-      const sep = TILE.w * (1.9 + sw.f * 1.6) + Math.random() * TILE.w * 0.4;
-      const pop = TILE.w * (10.5 + sw.f * 4.5) + Math.random() * TILE.w * 0.8;
+      // Everything stays on one line, so a halved piece must not be able to hop over its neighbour: the pop
+      // peaks below a block's own height (v^2 / 2g < 0.12 m), and the sideways kick does the separating.
+      const sep = TILE.w * (3.0 + sw.f * 1.2) + Math.random() * TILE.w * 0.4;
+      const pop = TILE.w * (5.0 + sw.f * 2.0) + Math.random() * TILE.w * 0.4;
       v.x += axis.x * sep * dir + sw.vx * 0.08;
       v.y += axis.y * sep * dir + sw.vy * 0.08 + pop;
-      v.z += axis.z * sep * dir + sw.vz * 0.08 + (Math.random() - 0.5) * 0.24;
+      v.z = 0;
       nb.velocity.copy(v);
-      nb.angularVelocity.copy(body.angularVelocity);
-      nb.angularVelocity.z += dir * (0.7 + sw.f * 0.8 + Math.random() * 0.25);
-      nb.angularVelocity.y += (Math.random() - 0.5) * 0.6;
       return nb;
     };
     const left = make(-w / 2 + (k * TILE.w) / 2, p.start, p.start + k, -1);
     const right = make(-w / 2 + k * TILE.w + ((p.len - k) * TILE.w) / 2, p.start + k, p.end, 1);
     this.magnets.onSplit(body, left, right);
+    this.queueSpread(body, left, right);
     this.removePiece(body);
     return { left, right };
+  }
+
+  // Open a gap at a fresh cut by sliding everything left of it left, and everything right of it right
+  // (as rigid groups, so stuck-together clusters are not torn). Walls limit how far either side can go.
+  queueSpread(body, left, right) {
+    const { bx } = this.bounds;
+    const others = this.pieces().filter((b) => b !== body && b !== left && b !== right);
+    const L = [left, ...others.filter((b) => b.position.x < body.position.x)];
+    const R = [right, ...others.filter((b) => b.position.x >= body.position.x)];
+    const lim = bx - 0.01;
+    const roomL = Math.max(0, lim + Math.min(...L.map((b) => b.position.x - b.piece.len * TILE.w / 2)));
+    const roomR = Math.max(0, lim - Math.max(...R.map((b) => b.position.x + b.piece.len * TILE.w / 2)));
+    let dl = Math.min(CUT_SPREAD, roomL);
+    let dr = Math.min(CUT_SPREAD, roomR);
+    if (dl < CUT_SPREAD) dr = Math.min(roomR, dr + (CUT_SPREAD - dl));
+    if (dr < CUT_SPREAD) dl = Math.min(roomL, dl + (CUT_SPREAD - dr));
+    this.spreads.push({ L, R, dl: -dl / CUT_SPREAD_STEPS, dr: dr / CUT_SPREAD_STEPS, left: CUT_SPREAD_STEPS });
+  }
+
+  applySpreads() {
+    for (const sp of this.spreads) {
+      for (const b of sp.L) { b.position.x += sp.dl; b.aabbNeedsUpdate = true; }
+      for (const b of sp.R) { b.position.x += sp.dr; b.aabbNeedsUpdate = true; }
+      sp.left--;
+    }
+    this.spreads = this.spreads.filter((sp) => sp.left > 0);
   }
 
   mergePieces(a, b, now) {
     const pa = a.piece;
     const pb = b.piece;
     const x = (a.position.x * pa.len + b.position.x * pb.len) / (pa.len + pb.len);
-    const z = (a.position.z * pa.len + b.position.z * pb.len) / (pa.len + pb.len);
+    const z = a.position.z;
     const y = Math.max(a.position.y, b.position.y) + TILE.h * 0.8;
     this.removePiece(a);
     this.removePiece(b);
@@ -150,6 +185,7 @@ export class Physics {
     let n = 0;
     const now = this.clock();
     while (this.acc >= STEP && n < 8) {
+      this.applySpreads();
       this.driveHand(STEP);
       this.magnets.update(STEP, now);
       this.world.step(STEP);
@@ -177,11 +213,11 @@ export class Physics {
     this.hand = { body: hb, con, held: body, target: new CANNON.Vec3(point.x, point.y, point.z), baseY: point.y, lift: 0, liftV: 0, age: 0, trail: [] };
   }
 
-  dragTo(x, z) {
+  // Pieces only move in the left/right frame, so the pointer drives x only.
+  dragTo(x) {
     if (!this.hand) return;
-    const { bx, bz } = this.bounds;
+    const { bx } = this.bounds;
     this.hand.target.x = clamp(x, -bx + 0.12, bx - 0.12);
-    this.hand.target.z = clamp(z, -bz + 0.12, bz - 0.12);
     this.detectShake();
   }
 
@@ -206,7 +242,7 @@ export class Physics {
       }
       return n;
     };
-    if (Math.max(reversals('x'), reversals('z')) < SHAKE_REVERSALS) return false;
+    if (reversals('x') < SHAKE_REVERSALS) return false;
     for (const b of mine) this.magnets.separate(b, now);
     h.trail.length = 0;
     return true;
@@ -243,38 +279,5 @@ export class Physics {
     const dvMax = (25 + (HAND_MAX_ACCEL - 25) * g * g * (3 - 2 * g)) * dt;
     if (dv.length() > dvMax) dv.scale(dvMax / dv.length(), dv);
     hb.velocity.vadd(dv, hb.velocity);
-    // Slerp the held orientation toward upright (yaw 0, roll 0), by turning the hand body.
-    const ident = new CANNON.Quaternion(0, 0, 0, 1);
-    const next = new CANNON.Quaternion();
-    hb.quaternion.slerp(ident, 1 - Math.exp(-dt * 2.5), next);
-    const dq = next.mult(hb.quaternion.inverse());
-    const [axis, ang] = dq.toAxisAngle(new CANNON.Vec3());
-    const a = ang > Math.PI ? ang - 2 * Math.PI : ang;
-    hb.angularVelocity.set((axis.x * a) / dt, (axis.y * a) / dt, (axis.z * a) / dt);
-  }
-
-  // A settled piece lying on its side, or turned well away from the camera, hops itself upright.
-  assistUpright(now) {
-    for (const b of this.pieces()) {
-      const p = b.piece;
-      if ((this.hand && this.magnets.cluster(this.hand.held).includes(b)) || this.magnets.hasBonds(b)) { p.rightAt = 0; continue; }
-      const speed = b.velocity.length();
-      const spin = b.angularVelocity.length();
-      const xa = b.quaternion.vmult(new CANNON.Vec3(1, 0, 0));
-      const roll = Math.atan2(xa.y, Math.hypot(xa.x, xa.z));
-      const yaw = Math.atan2(-xa.z, xa.x);
-      if (speed < 0.25 && spin < 0.4 && (Math.abs(roll) > 0.22 || Math.abs(yaw) > 0.5)) {
-        if (!p.rightAt) p.rightAt = now + 450;
-        else if (now >= p.rightAt) {
-          const up = 2.4;
-          const flight = (2 * up) / G;
-          b.velocity.y = up;
-          b.angularVelocity.set(0, clamp(-yaw / flight, -9, 9), clamp(-roll / flight, -9, 9));
-          p.rightAt = 0;
-        }
-      } else {
-        p.rightAt = 0;
-      }
-    }
   }
 }

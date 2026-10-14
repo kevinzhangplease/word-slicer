@@ -20,7 +20,7 @@ function loadSettings() {
 }
 
 const HINTS = {
-  hand: 'Drag letters around. Push the ends of pieces together and they stick like magnets. Shake a piece to pull it off.',
+  hand: 'Slide pieces left and right. Their ends stick like magnets, which rejoins the word. Shake a piece, or slice the joint, to pull it apart.',
 };
 
 export class Game {
@@ -102,7 +102,7 @@ export class Game {
     let x = -(total + gap * (bounds.length - 2)) / 2;
     for (let i = 0; i < bounds.length - 1; i++) {
       const w = (bounds[i + 1] - bounds[i]) * TILE.w;
-      this.physics.addPiece(bounds[i], bounds[i + 1], x + w / 2, TILE.h / 2 + 0.001, 0.1, 0);
+      this.physics.addPiece(bounds[i], bounds[i + 1], x + w / 2, TILE.h / 2 + 0.001, 0, 0);
       x += w + gap;
     }
   }
@@ -130,7 +130,7 @@ export class Game {
     this.cutMarks = [];
     this.hoverGap = null;
     this.fitBoard();
-    this.physics.addPiece(0, entry.word.length, 0, 1.5, 0.1, (Math.random() - 0.5) * 0.08);
+    this.physics.addPiece(0, entry.word.length, 0, 1.5, 0, 0);
     this.hideResult();
     this.setHint();
   }
@@ -191,7 +191,7 @@ export class Game {
   dragTo(x, y) {
     if (!this.held) return;
     const pt = this.scene.planeHit(x, y, this.dragY);
-    if (pt) this.physics.dragTo(pt.x, pt.z);
+    if (pt) this.physics.dragTo(pt.x);
   }
 
   release() {
@@ -220,19 +220,29 @@ export class Game {
       const t = a.ly / (a.ly - b.ly);
       const lx = a.lx + t * (b.lx - a.lx);
       const w = p.len * TILE.w;
-      if (Math.abs(lx) > w / 2 + 0.02) continue;
+      // Cut candidates: every gap inside the piece, plus any stuck-together joint at either end.
+      const mg = this.physics.magnets;
+      const rJoint = mg.bondAt(body, 'R');
+      const lJoint = mg.bondAt(body, 'L');
+      if (lx < -w / 2 - (lJoint ? 0.1 : 0.02) || lx > w / 2 + (rJoint ? 0.1 : 0.02)) continue;
       const c = this.scene.faceHit(body, x1 - vx * back, y1 - vy * back); // where the blade was 40 ms ago
       if (!c) continue;
       const dx = b.lx - c.lx;
       const dy = b.ly - c.ly;
       if (Math.abs(dy) / (Math.hypot(dx, dy) || 1) < 0.45) continue; // dragged along the word, not across it
-      if (p.len < 2) { this.clank(body); continue; }
-      const k = clamp(Math.round((lx + w / 2) / TILE.w), 1, p.len - 1); // snap to the nearest letter gap
+      const cands = [];
+      for (let k = 1; k < p.len; k++) cands.push({ x: -w / 2 + k * TILE.w, k });
+      if (rJoint) cands.push({ x: w / 2, joint: rJoint });
+      if (lJoint) cands.push({ x: -w / 2, joint: lJoint });
+      if (!cands.length) { this.clank(body); continue; }
+      const best = cands.reduce((m, q) => (Math.abs(q.x - lx) < Math.abs(m.x - lx) ? q : m)); // nearest gap or joint
       const wa = this.scene.faceToWorld(body, c.lx, c.ly);
       const wb = this.scene.faceToWorld(body, b.lx, b.ly);
       const v = wb.sub(wa).multiplyScalar(1 / back);
       if (v.length() > 8) v.multiplyScalar(8 / v.length());
-      this.doCut(body, k, { vx: v.x, vy: v.y, vz: v.z, f: clamp(v.length() / (TILE.w * 31), 0, 1) });
+      const sw = { vx: v.x, vy: v.y, vz: 0, f: clamp(v.length() / (TILE.w * 31), 0, 1) };
+      if (best.joint) this.cutJoint(body, best, sw);
+      else this.doCut(body, best.k, sw);
     }
   }
 
@@ -268,6 +278,46 @@ export class Game {
     const word = this.entry.word;
     speech.sequence([word.slice(left.piece.start, left.piece.end), word.slice(right.piece.start, right.piece.end)], { rate: 0.9, gap: 90 });
     this.setHint();
+  }
+
+  // Slicing through a stuck-together joint pulls the two pieces apart again. Joining two pieces that were
+  // neighbours in the word re-fuses that gap (see onMagnetEvent), so cutting it here puts the cut back.
+  cutJoint(body, cand, sw) {
+    const a = this.scene.faceToWorld(body, cand.x, -TILE.h * 0.62);
+    const b = this.scene.faceToWorld(body, cand.x, TILE.h * 0.62);
+    if (this.held && this.physics.magnets.cluster(this.held).includes(body)) this.release();
+    const now = performance.now();
+    this.physics.magnets.separate(cand.joint, now);
+    for (const q of [cand.joint.x, cand.joint.y]) {
+      q.velocity.y += TILE.w * (5 + sw.f * 2); // the same little pop a cut gives
+      q.piece.noCutUntil = now + 300; // one stroke cuts one joint, not the neighbour's next gap too
+      q.piece.magnetUntil = 0; // and they must not snap straight back together
+    }
+    const power = clamp(0.5 + sw.f * 1.1, 0.5, 1.6);
+    this.fx.flash(a, b);
+    this.fx.slice(a, b, this.theme.chips, power);
+    if (!this.reduced) {
+      this.fx.addShake(clamp(sw.f * 6, 1.5, 6));
+      this.hitStop = 0.07;
+    }
+    audio.cut(sw.f * 2600);
+  }
+
+  // Keep the word's cuts in step with what is physically stuck together: pieces that are neighbours in the
+  // word and snap together are un-cut at that gap; when they come apart (knife, shake, impact) it is a cut again.
+  onMagnetEvent(e) {
+    const x = e.a;
+    const y = e.b;
+    if (!x || !y || !x.piece || !y.piece || x.piece.end !== y.piece.start) return;
+    const gap = x.piece.end;
+    if (e.type === 'snap') {
+      this.cuts.delete(gap);
+      this.history = this.history.filter((g) => g !== gap);
+    } else if (!this.cuts.has(gap)) {
+      this.cuts.add(gap);
+      this.history.push(gap);
+    }
+    this.clearMarks();
   }
 
   undo() {
@@ -350,7 +400,6 @@ export class Game {
     ps.forEach((b, i) => setTimeout(() => {
       if (!this.physics.world.bodies.includes(b)) return;
       b.velocity.y = Math.max(b.velocity.y, 2.2);
-      b.angularVelocity.z += (i % 2 ? 1 : -1) * 0.8;
     }, 180 + i * 140));
     const items = this.cuts.size ? [...this.partsFor(this.cuts), this.entry.word] : [this.entry.word];
     speech.sequence(items, { rate: 0.8, gap: 220 });
@@ -492,7 +541,6 @@ export class Game {
       this.physics.timeScale = Math.min(1, this.physics.timeScale + dt * 14);
     }
     this.physics.step(dt * 1000);
-    this.physics.assistUpright(now);
     this.fx.update(dt * this.physics.timeScale);
     if (this.held && !this.physics.hand) this.held = null;
 
@@ -504,12 +552,13 @@ export class Game {
     for (const l of this.letters) if (l.paintT < 1) l.paintT = Math.min(1, l.paintT + dt * 4.5);
 
     for (const e of this.physics.magnets.drain()) {
+      this.onMagnetEvent(e);
       const at = new THREE.Vector3(e.x, e.y, e.z);
       if (e.type === 'snap') { audio.snap(); this.fx.sparks(at, 18, this.theme.glow, 1); }
       else { audio.pop(); this.fx.dust(e.x, Math.max(0, e.y - 0.08), e.z, 3); this.fx.sparks(at, 8, '#ffffff', 0.8); }
     }
 
-    // pointer on the table (for wobble) and the gap the knife would cut (as a snap guide)
+    // pointer on the table and the gap the knife would cut (as a snap guide)
     const inp = this.input;
     this.pointerWorld = inp.inside ? this.scene.planeHit(inp.x, inp.y, TILE.h / 2) : null;
     this.hoverGap = null;

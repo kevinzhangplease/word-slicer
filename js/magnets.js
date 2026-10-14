@@ -52,6 +52,9 @@ export class Magnets {
     return this.bonds.some((k) => (side === 'R' ? k.x === body : k.y === body));
   }
 
+  // The bond on one end of a piece ('R' = its right face), if any.
+  bondAt(body, side) { return this.bonds.find((k) => (side === 'R' ? k.x === body : k.y === body)) || null; }
+
   bondBetween(a, b) { return this.bonds.some((k) => (k.x === a && k.y === b) || (k.x === b && k.y === a)); }
 
   cluster(body) {
@@ -223,7 +226,7 @@ export class Magnets {
       b.aabbNeedsUpdate = true;
     }
     this.create(X, Y);
-    this.events.push({ type: 'snap', x: (X.position.x + Y.position.x) / 2, y: (X.position.y + Y.position.y) / 2, z: (X.position.z + Y.position.z) / 2 });
+    this.events.push({ type: 'snap', a: X, b: Y, x: (X.position.x + Y.position.x) / 2, y: (X.position.y + Y.position.y) / 2, z: (X.position.z + Y.position.z) / 2 });
     this.snapped = now;
   }
 
@@ -272,7 +275,7 @@ export class Magnets {
         this.cool.set(this.key(bond.x, bond.y), now + COOLDOWN * 1000);
         const p = bond.x.position;
         const q = bond.y.position;
-        this.events.push({ type: 'break', x: (p.x + q.x) / 2, y: (p.y + q.y) / 2, z: (p.z + q.z) / 2 });
+        this.events.push({ type: 'break', a: bond.x, b: bond.y, x: (p.x + q.x) / 2, y: (p.y + q.y) / 2, z: (p.z + q.z) / 2 });
       }
     }
   }
@@ -284,7 +287,7 @@ export class Magnets {
     const b = bond.y.position;
     this.remove(bond, { kick: 1.2 });
     this.cool.set(this.key(bond.x, bond.y), now + COOLDOWN * 1000);
-    this.events.push({ type: 'break', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 });
+    this.events.push({ type: 'break', a: bond.x, b: bond.y, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 });
   }
 
   drain() {
