@@ -194,10 +194,10 @@ export class Scene3D {
       x.lineWidth = 9;
       roundRectPath(x, m - 6, m - 6, W - 2 * m + 12, H - 2 * m + 12, 30); x.stroke();
     }
-    x.font = `700 ${Math.round(H * 0.7)}px ${FONT}`;
+    x.font = `700 ${Math.round(H * 0.98)}px ${FONT}`;
     x.textAlign = 'center';
     x.textBaseline = 'middle';
-    const ty = H * 0.53;
+    const ty = H * 0.54;
     x.fillStyle = light ? 'rgba(0,0,0,.34)' : 'rgba(255,255,255,.6)';
     x.fillText(ch, W / 2 + 3, ty + 4);
     x.fillStyle = ink;
