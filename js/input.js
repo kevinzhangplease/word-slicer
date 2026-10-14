@@ -48,7 +48,8 @@ export class Input {
     this.vy = 0;
     this.speed = 0;
     this.trail.push({ x: p.x, y: p.y, t: e.timeStamp });
-    if (this.game.tool !== 'knife') this.game.paintAt(p.x, p.y);
+    if (this.game.tool === 'hand') this.game.grabAt(p.x, p.y);
+    else if (this.game.tool !== 'knife') this.game.paintAt(p.x, p.y);
   }
 
   onMove(e) {
@@ -73,6 +74,8 @@ export class Input {
     this.velocity(ev.timeStamp);
     if (this.game.tool === 'knife') {
       this.game.onBlade(px, py, p.x, p.y, this.vx, this.vy, this.speed);
+    } else if (this.game.tool === 'hand') {
+      this.game.dragTo(p.x, p.y);
     } else {
       const n = Math.max(1, Math.ceil(dist / 8));
       for (let i = 1; i <= n; i++) this.game.paintAt(px + ((p.x - px) * i) / n, py + ((p.y - py) * i) / n);
@@ -103,6 +106,7 @@ export class Input {
   onUp(e) {
     if (!this.down) return;
     this.down = false;
+    if (this.game.tool === 'hand') this.game.release();
     if (e.pointerType === 'touch') this.inside = false;
     const quick = performance.now() - this.downAt < 350;
     if (quick && this.moved < 10 && this.game.tool === 'knife') this.game.tapAt(this.x, this.y);

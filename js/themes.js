@@ -1,12 +1,13 @@
-// A theme is one palette object. Add a theme by adding an entry here; the picker builds itself.
+// A theme is one palette object. 3D fields: mat (block material kind), table, light, ground, env, exposure, boardMat. Add a theme by adding an entry here; the picker builds itself.
 // vowel/consonant are the two brush colours. "contrast" uses the Okabe-Ito orange/blue pair,
 // which stays distinguishable for the common kinds of colour blindness.
 export const THEMES = {
   wood: {
     name: 'Wooden Toys', dark: false,
     bgTop: '#f3dfb4', bgBottom: '#cfa56b', vignette: 0.42,
+    mat: 'wood', table: '#e9dfc9', light: '#fff0d4', ground: '#b08a5a', env: 0.32, exposure: 0.95, boardMat: 'wood',
     board: { top: '#d9a468', bottom: '#b07a40', grain: '#6b3f17', edge: '#6a4018' },
-    block: { base: '#f6d58a', ink: '#3a2410', grain: '#b9893c', grainA: 0.34, gloss: 0 },
+    block: { base: '#eab864', ink: '#3a2410', grain: '#9a6420', grainA: 0.34, gloss: 0 },
     vowel: '#e5484d', consonant: '#2e7bd6',
     blade: '#ffffff', glow: '#ffd98a',
     chips: ['#e8c07a', '#c98c3a', '#fff1c1', '#a8702e'],
@@ -15,7 +16,8 @@ export const THEMES = {
   candy: {
     name: 'Candy', dark: false,
     bgTop: '#ffd9ec', bgBottom: '#c3b4ff', vignette: 0.28,
-    board: { top: '#fff3f9', bottom: '#ffc7e0', grain: '#ff9cc6', edge: '#e472a8' },
+    mat: 'candy', table: '#ffd2ea', light: '#fff2fa', ground: '#e8a6ff', env: 0.55, exposure: 1.0, boardMat: 'smooth',
+    board: { top: '#cdbcff', bottom: '#a994f2', grain: '#8f78e8', edge: '#7a62d6' },
     block: { base: '#ffe9a8', ink: '#6a2150', grain: '#ffffff', grainA: 0, gloss: 0.6 },
     vowel: '#ff3d8b', consonant: '#14b8a6',
     blade: '#ffffff', glow: '#ffb3dd',
@@ -25,6 +27,7 @@ export const THEMES = {
   ocean: {
     name: 'Ocean', dark: false,
     bgTop: '#c4ecff', bgBottom: '#4aa3d8', vignette: 0.4,
+    mat: 'gloss', table: '#6cc0ec', light: '#f4fbff', ground: '#5aa7d8', env: 0.5, exposure: 1.0, boardMat: 'wood',
     board: { top: '#ecd8ae', bottom: '#c9a96f', grain: '#9c7b3f', edge: '#8c6b33' },
     block: { base: '#ffffff', ink: '#0b3b5a', grain: '#cfe9f7', grainA: 0.18, gloss: 0.32 },
     vowel: '#ff8c1a', consonant: '#0a6fb5',
@@ -35,6 +38,7 @@ export const THEMES = {
   space: {
     name: 'Space', dark: true,
     bgTop: '#0b1030', bgBottom: '#2a1650', vignette: 0.55,
+    mat: 'neon', table: '#141a44', light: '#cfd8ff', ground: '#40307a', env: 0.25, exposure: 1.05, boardMat: 'smooth',
     board: { top: '#454d86', bottom: '#2a3060', grain: '#7a84d6', edge: '#141838' },
     block: { base: '#5a63a8', ink: '#f2f6ff', grain: '#8c96e6', grainA: 0.1, gloss: 0.22 },
     vowel: '#ffb000', consonant: '#35d0ff',
@@ -46,6 +50,7 @@ export const THEMES = {
   contrast: {
     name: 'High Contrast', dark: false,
     bgTop: '#ffffff', bgBottom: '#dcdcdc', vignette: 0.18,
+    mat: 'flat', table: '#f2f2f2', light: '#ffffff', ground: '#888888', env: 0.2, exposure: 0.95, boardMat: 'smooth',
     board: { top: '#c9c9c9', bottom: '#9a9a9a', grain: '#555555', edge: '#2b2b2b' },
     block: { base: '#ffffff', ink: '#000000', grain: '#dddddd', grainA: 0, gloss: 0, outline: '#000000' },
     vowel: '#e69f00', consonant: '#0072b2',
@@ -62,6 +67,7 @@ export function applyThemeCSS(theme) {
   r.setProperty('--border', theme.ui.border);
   r.setProperty('--accent', theme.ui.accent);
   r.setProperty('--accent-fg', theme.ui.accentFg);
+  r.setProperty('--vig', String(theme.vignette));
   r.setProperty('--vowel', theme.vowel);
   r.setProperty('--cons', theme.consonant);
   document.documentElement.dataset.dark = theme.dark ? '1' : '0';

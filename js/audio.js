@@ -97,6 +97,20 @@ class AudioFX {
     this.tone('sine', 520, 780, 0.08, 0.07);
   }
 
+  // magnets clacking together / being pulled apart
+  snap() {
+    if (!this.ok('snap', 80)) return;
+    this.tone('square', 1100, 380, 0.05, 0.07);
+    this.tone('sine', 220, 90, 0.12, 0.35);
+    this.burst(0.04, 'highpass', 4000, 0, 0.7, 0.18);
+  }
+
+  pop() {
+    if (!this.ok('pop', 80)) return;
+    this.tone('sine', 420, 140, 0.1, 0.22);
+    this.burst(0.05, 'bandpass', 1800, 0, 1.2, 0.12);
+  }
+
   good() {
     if (!this.ok('good')) return;
     [523, 659, 784, 1047].forEach((f, i) => this.tone('triangle', f, f, 0.22, 0.14, i * 0.09));
