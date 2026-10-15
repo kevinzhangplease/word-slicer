@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { TILE } from './constants.js';
+import { blockKit, surfaces } from './worlds.js';
+import { buildScenery } from './scenery.js';
 import { lighten, darken, isLight, mulberry32, clamp, easeOutBack, rgba, roundRectPath } from './lighting.js';
 
 const FONT = '"Atkinson Hyperlegible", "Lexend", "Trebuchet MS", system-ui, sans-serif';
@@ -46,6 +48,8 @@ export class Scene3D {
     this.table.receiveShadow = true;
     this.scene.add(this.table);
     this.board = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+    this.boardMats = null;
+    this.surf = null;
     this.board.castShadow = true;
     this.board.receiveShadow = true;
     this.scene.add(this.board);
@@ -170,29 +174,20 @@ export class Scene3D {
     this.cFresh = new THREE.Color(lighten(theme.block.base, 0.5));
     const r = this.renderer;
     r.toneMappingExposure = theme.exposure;
-    r.setClearColor(theme.table);
+    r.setClearColor(theme.fog ? theme.fog.color : theme.table);
+    this.scene.fog = theme.fog ? new THREE.Fog(theme.fog.color, 10, 40) : null;
     this.key.color.set(theme.light);
     this.hemi.groundColor.set(theme.ground);
     this.scene.environmentIntensity = theme.env;
 
-    const tm = this.table.material;
-    tm.color.set(theme.table);
-    tm.needsUpdate = true;
+    this.buildSurfaces(theme);
+    this.sceneryKey = null;
+    this.rebuildScenery();
 
-    const bm = this.board.material;
-    if (bm.map) bm.map.dispose();
-    if (theme.boardMat === 'wood') {
-      const tex = this.texture(this.woodCanvas(1024, 512, theme.board.top, theme.board.grain, 7, 230));
-      bm.map = tex;
-      bm.color.set('#ffffff');
-      bm.roughness = 0.68;
-    } else {
-      bm.map = null;
-      bm.color.set(theme.board.top);
-      bm.roughness = 0.38;
-    }
-    bm.needsUpdate = true;
-
+    if (this.kit) { this.kit.map.dispose(); this.kit.paintMap.dispose(); this.kit.normal.dispose(); for (const g of this.kit.geos) g.dispose(); }
+    this.kit = blockKit(this, theme);
+    for (const t of this.faceNormalCache.values()) t.dispose();
+    this.faceNormalCache.clear();
     if (this.blockTex) this.blockTex.dispose();
     this.blockTex = theme.block.grainA || theme.mat === 'wood'
       ? this.texture(this.woodCanvas(256, 256, theme.block.base, theme.block.grain, 3, 90))
@@ -203,31 +198,102 @@ export class Scene3D {
     this.pieces.clear();
   }
 
+  // A ground/board surface spec -> material. `scale` (metres per repeat) is applied in fit() once the board size is known.
+  surfaceMaterial(spec) {
+    const m = new THREE.MeshPhysicalMaterial({
+      color: spec.color || '#ffffff', roughness: spec.roughness ?? 0.8, metalness: spec.metalness || 0,
+      clearcoat: spec.clearcoat || 0, clearcoatRoughness: spec.clearcoatRoughness ?? 0.3,
+    });
+    const tex = (c, srgb) => {
+      const t = new THREE.CanvasTexture(c);
+      if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = this.maxAniso;
+      if (spec.scale) t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      return t;
+    };
+    if (spec.map) m.map = tex(spec.map, true);
+    if (spec.normal) { m.normalMap = tex(spec.normal, false); m.normalScale.set(spec.normalScale || 1, spec.normalScale || 1); }
+    m.userData.scale = spec.scale || 0;
+    return m;
+  }
+
+  disposeMat(m) {
+    if (!m) return;
+    if (m.map) m.map.dispose();
+    if (m.normalMap) m.normalMap.dispose();
+    m.dispose();
+  }
+
+  buildSurfaces(theme) {
+    if (this.surf) {
+      this.disposeMat(this.groundMat);
+      for (const m of new Set(this.boardMats)) this.disposeMat(m);
+    }
+    const sp = surfaces(this, theme);
+    this.surf = sp;
+    this.groundMat = this.surfaceMaterial(sp.ground);
+    this.table.material = this.groundMat;
+    const top = this.surfaceMaterial(sp.top);
+    const side = this.surfaceMaterial(sp.side);
+    const sideX = side;
+    const sideZ = side.clone(); // clone shares textures; repeats are set per orientation in fit()
+    if (side.map) { sideZ.map = side.map.clone(); sideZ.map.needsUpdate = true; }
+    if (side.normalMap) { sideZ.normalMap = side.normalMap.clone(); sideZ.normalMap.needsUpdate = true; }
+    sideZ.userData.scale = side.userData.scale;
+    this.boardMats = [sideX, sideX, top, sideX, sideZ, sideZ];
+    this.board.material = this.boardMats;
+    this.applyRepeats();
+  }
+
+  // Props around the board; rebuilt only when the theme or the board size changes.
+  rebuildScenery() {
+    if (!this.theme) return;
+    const key = `${this.theme.world}|${this.bx.toFixed(2)}|${this.bz}`;
+    if (key === this.sceneryKey) return;
+    this.sceneryKey = key;
+    if (this.scenery) { this.scene.remove(this.scenery.group); this.scenery.dispose(); this.scenery = null; }
+    this.scenery = buildScenery(this, this.theme, this.bx, this.bz);
+    if (this.scenery) this.scene.add(this.scenery.group);
+  }
+
+  // Texture repeats follow the board size, so grass, grain and tiles keep a constant real-world scale.
+  applyRepeats() {
+    if (!this.boardMats) return;
+    const set = (m, w, h) => {
+      const k = m.userData.scale;
+      if (!k) return;
+      for (const t of [m.map, m.normalMap]) if (t) t.repeat.set(w / k, h / k);
+    };
+    const W = 2 * this.bx + 0.14; const D = 2 * this.bz + 0.14;
+    const [sx, , top, , sz] = this.boardMats;
+    set(top, W, D);
+    set(sx, D, BOARD_T);
+    set(sz, W, BOARD_T);
+    set(this.groundMat, 90, 90);
+  }
+
   baseMaterial(gi) {
     const t = this.theme;
     const b = t.block;
     const rnd = mulberry32(gi * 977 + 13);
-    let m;
+    const k = this.kit;
+    if (k) {
+      const map = k.map.clone(); map.offset.set(rnd(), rnd()); map.needsUpdate = true;
+      const normalMap = k.normal.clone(); normalMap.offset.copy(map.offset); normalMap.needsUpdate = true;
+      return new THREE.MeshPhysicalMaterial({ color: '#ffffff', map, normalMap, normalScale: new THREE.Vector2(1, 1), ...k.look.mat });
+    }
     if (t.mat === 'wood' && this.blockTex) {
       const tex = this.blockTex.clone();
       tex.offset.set(rnd(), rnd());
       tex.needsUpdate = true;
-      m = new THREE.MeshStandardMaterial({ map: tex, color: new THREE.Color().setHSL(0.09, 0.12 * rnd(), 0.93 + 0.07 * rnd()), roughness: 0.6 });
-    } else if (t.mat === 'candy') {
-      m = new THREE.MeshPhysicalMaterial({ color: b.base, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.12 });
-    } else if (t.mat === 'gloss') {
-      const tex = this.blockTex ? this.blockTex.clone() : null;
-      if (tex) { tex.offset.set(rnd(), rnd()); tex.needsUpdate = true; }
-      m = new THREE.MeshPhysicalMaterial({ color: '#ffffff', map: tex, roughness: 0.34, clearcoat: 0.6, clearcoatRoughness: 0.2 });
-    } else if (t.mat === 'neon') {
-      m = new THREE.MeshStandardMaterial({ color: b.base, roughness: 0.4, metalness: 0.2, emissive: t.glow, emissiveIntensity: 0.08 });
-    } else {
-      m = new THREE.MeshStandardMaterial({ color: b.base, roughness: 0.9 });
+      return new THREE.MeshStandardMaterial({ map: tex, color: new THREE.Color().setHSL(0.09, 0.12 * rnd(), 0.93 + 0.07 * rnd()), roughness: 0.6 });
     }
-    return m;
+    return new THREE.MeshStandardMaterial({ color: b.base, roughness: 0.9 });
   }
 
   paintMaterial(color) {
+    const k = this.kit;
+    if (k) return new THREE.MeshPhysicalMaterial({ color, map: k.paintMap, normalMap: k.normal, normalScale: new THREE.Vector2(1, 1), ...k.look.paint });
     return new THREE.MeshPhysicalMaterial({ color, roughness: 0.32, clearcoat: 0.9, clearcoatRoughness: 0.18 });
   }
 
@@ -286,7 +352,7 @@ export class Scene3D {
   }
 
   // Blur a height canvas (so grooves get sloped walls) and turn it into a tangent-space normal map.
-  normalFrom(c) {
+  normalFrom(c, grain = null) {
     const W = c.width;
     const H = c.height;
     const x = c.getContext('2d');
@@ -309,6 +375,7 @@ export class Scene3D {
       return out;
     };
     h = blur(blur(h, 3), 3);
+    if (grain) for (let i = 0; i < W * H; i++) h[i] -= grain.f[i] * grain.amp; // raised grain reads as lower carved-in height
     const S = 7; // groove steepness
     const at = (a, b) => h[Math.min(H - 1, Math.max(0, b)) * W + Math.min(W - 1, Math.max(0, a))];
     for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) {
@@ -354,7 +421,7 @@ export class Scene3D {
     const dw = (TILE.w - 0.03) * ppm;
     const dh = (TILE.h - 0.03) * ppm;
     x.drawImage(this.heightCanvas(ch), (FW - dw) / 2, (FH - dh) / 2, dw, dh);
-    t = this.normalFrom(c);
+    t = this.normalFrom(c, this.kit ? this.kit.grain(FW, FH) : null);
     this.faceNormalCache.set(ch, t);
     return t;
   }
@@ -425,6 +492,7 @@ export class Scene3D {
       if (b.x0 >= L && b.x1 <= R && b.y0 >= T && b.y1 <= B) hi = D; else lo = D;
     }
     place(hi);
+    if (this.scene.fog) { this.scene.fog.near = hi + this.theme.fog.near; this.scene.fog.far = hi + this.theme.fog.far; }
     const b = bbox();
     const sx = (L + R) / 2 - (b.x0 + b.x1) / 2;
     const sy = (T + B) / 2 - (b.y0 + b.y1) / 2;
@@ -433,7 +501,8 @@ export class Scene3D {
 
     // board + lights follow the board size
     this.board.geometry.dispose();
-    this.board.geometry = new RoundedBoxGeometry(2 * bx + 0.14, BOARD_T, 2 * bz + 0.14, 3, 0.03);
+    this.board.geometry = new RoundedBoxGeometry(2 * bx + 0.14, BOARD_T, 2 * bz + 0.14, 3, this.surf ? this.surf.radius : 0.03);
+    this.applyRepeats();
     this.board.position.set(0, -BOARD_T / 2, 0);
     const dir = new THREE.Vector3(-0.5, 0.82, 0.42).normalize();
     this.key.position.copy(dir.multiplyScalar(9));
@@ -513,7 +582,8 @@ export class Scene3D {
       const baseMat = this.baseMaterial(gi);
       // one material per face of the rounded box: [+x, -x, +y, -y, +z (front, carved), -z]
       const mats = [baseMat, baseMat, baseMat, baseMat, baseMat, baseMat];
-      const mesh = new THREE.Mesh(this.tileGeo, mats);
+      const geo = this.kit ? this.kit.geos[gi % this.kit.geos.length] : this.tileGeo;
+      const mesh = new THREE.Mesh(geo, mats);
       mesh.position.x = -(p.len * TILE.w) / 2 + (i + 0.5) * TILE.w;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -541,6 +611,7 @@ export class Scene3D {
     this.scene.remove(e.group);
     for (const t of e.tiles) {
       if (t.baseMat.map) t.baseMat.map.dispose();
+      if (t.baseMat.normalMap) t.baseMat.normalMap.dispose();
       t.baseMat.dispose();
       if (t.paintMat) t.paintMat.dispose();
       if (t.front) t.front.dispose();
@@ -569,6 +640,7 @@ export class Scene3D {
 
   sync(now) {
     const game = this.game;
+    if (this.scenery) { this.scenery.update(now, Math.min(0.05, (now - (this.lastSync || now)) / 1000), game.reduced); this.lastSync = now; }
     const th = this.theme;
     const bodies = game.physics.pieces();
     const alive = new Set();

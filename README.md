@@ -26,7 +26,12 @@ Add `?quality=low` to the URL on a slow device (no antialiasing, small shadow ma
 `Z` undo last cut · `H` hear the word · `Enter` check · `N` new word.
 
 Settings (saved in the browser): **Level** (Easy 2 syllables, Medium 3, Hard 4+, Mixed), **Tasks** (slice +
-paint, slice only, paint only), **Theme** (Wooden Toys, Candy, Ocean, Space, High Contrast), sound on/off.
+paint, slice only, paint only), **Theme**, sound on/off. Each theme is a small world, not a recolour: Wooden Toys (wooden blocks on a plank
+floor with toys), Tofu Kitchen (tofu on a butcher block, steamer, wok, soy sauce), Rock Garden (cube granite on a
+turf, meadow with mushrooms and butterflies), Ice & Snow (ice cubes on a snow slab, pines, snowman, snowfall),
+Candy Shop (sugar-dusted gummies on a chocolate bar, lollipops and canes), Sandcastle Beach (packed-sand blocks on
+wet sand, shells, bucket, crab) and Moon Base (brushed-metal cargo cubes on a landing pad, dome, rover), plus High
+Contrast.
 The High Contrast theme uses an orange/blue brush pair that stays distinguishable for common kinds of colour
 blindness. **Check** grades the cuts you see: pieces that are neighbours in the word and stuck together count as uncut.
 
@@ -80,7 +85,8 @@ Deliberate rules, for readability and playability:
 ```
 index.html  style.css
 js/  main · game (state, tools, checking, UI) · scene (Three.js) · overlay (cursors, marks, particles)
-     physics (cannon-es, hand) · magnets · input · fx · audio · speech · themes · words · lighting · constants
+     physics (cannon-es, hand) · magnets · input · fx · audio · speech · themes · worlds (block looks, ground and board
+     textures) · scenery (props per world) · words · lighting · constants
 vendor/  three/  cannon-es.js  fonts/ (Atkinson Hyperlegible, OFL)
 scripts/check-words.mjs
 ```
