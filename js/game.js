@@ -773,6 +773,9 @@ export class Game {
 
   renderOnce(t = performance.now()) {
     this.scene.sync(t);
+    const inp = this.input;
+    const showKnife = this.tool === 'knife' && (inp.inside || inp.down) && !(inp.pointerType === 'touch' && !inp.down);
+    this.scene.placeKnife(showKnife, inp.x, inp.y, inp.angle);
     this.scene.render();
     this.overlay.draw(t);
     const sh = this.reduced ? { x: 0, y: 0 } : this.fx.shakeOffset();

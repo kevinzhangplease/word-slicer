@@ -64,6 +64,62 @@ export class Scene3D {
     this.bz = 0.95;
     this.theme = null;
     this.blockTex = null;
+    this.knife = this.makeKnife();
+    this.scene.add(this.knife);
+  }
+
+  // A chef's knife: extruded steel blade (tip at the origin, pointing +x) and a riveted wooden handle.
+  // It lives just in front of the blocks' front faces and casts a real shadow on them and the board.
+  makeKnife() {
+    const k = 0.0028; // metres per pixel of the old 2D sprite, so the shape and size feel the same
+    const s = new THREE.Shape();
+    s.moveTo(0, 0);
+    s.quadraticCurveTo(-26 * k, 4 * k, -68 * k, 13 * k);
+    s.lineTo(-70 * k, 13 * k);
+    s.lineTo(-70 * k, -9 * k);
+    s.quadraticCurveTo(-34 * k, -12 * k, 0, 0);
+    const steel = new THREE.MeshStandardMaterial({ color: '#eef2f6', metalness: 0.85, roughness: 0.28, envMapIntensity: 2.6 });
+    const bladeGeo = new THREE.ExtrudeGeometry(s, {
+      depth: 0.002, bevelEnabled: true, bevelThickness: 0.0012, bevelSize: 0.0012, bevelSegments: 2, curveSegments: 16,
+    });
+    bladeGeo.translate(0, 0, -0.001);
+    const tilt = new THREE.Group();
+    tilt.rotation.x = -0.2; // spine leans back a little so the flat catches the key light
+    const blade = new THREE.Mesh(bladeGeo, steel);
+    const bolster = new THREE.Mesh(new RoundedBoxGeometry(6 * k, 24 * k, 0.012, 2, 0.002), steel);
+    bolster.position.set(-71 * k, 2 * k, 0);
+    const wood = new THREE.MeshStandardMaterial({ color: '#5e3c22', roughness: 0.55, metalness: 0 });
+    const handle = new THREE.Mesh(new RoundedBoxGeometry(70 * k, 19 * k, 0.016, 3, 0.006), wood);
+    handle.position.set(-107 * k, 0, 0);
+    const rivetGeo = new THREE.CylinderGeometry(2.3 * k, 2.3 * k, 0.018, 12);
+    rivetGeo.rotateX(Math.PI / 2);
+    const rivetMat = new THREE.MeshStandardMaterial({ color: '#d8d2c6', metalness: 0.9, roughness: 0.3 });
+    tilt.add(blade, bolster, handle);
+    for (const px of [-128, -108, -88]) {
+      const r = new THREE.Mesh(rivetGeo, rivetMat);
+      r.position.set(px * k, 0, 0);
+      tilt.add(r);
+    }
+    tilt.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    const g = new THREE.Group();
+    g.add(tilt);
+    g.visible = false;
+    return g;
+  }
+
+  // Put the knife tip under the pointer, on a vertical plane just in front of the blocks, turned with the swipe.
+  placeKnife(show, sx, sy, angle) {
+    const kn = this.knife;
+    kn.visible = false;
+    if (!show) return;
+    const r = this.ray(sx, sy);
+    const z = TILE.d / 2 + 0.03;
+    if (Math.abs(r.direction.z) < 1e-6) return;
+    const t = (z - r.origin.z) / r.direction.z;
+    if (t <= 0) return;
+    kn.position.copy(r.origin).addScaledVector(r.direction, t);
+    kn.rotation.set(0, 0, -angle);
+    kn.visible = true;
   }
 
   // ---------- textures & materials ----------

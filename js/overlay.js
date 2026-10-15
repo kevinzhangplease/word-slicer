@@ -172,36 +172,16 @@ export class Overlay {
     const ctx = this.ctx;
     if (!input.inside && !input.down) return;
     if (input.pointerType === 'touch' && !input.down) return;
+    if (tool === 'knife') return; // the knife is a 3D mesh in the scene
     ctx.save();
     ctx.translate(input.x, input.y);
     ctx.shadowColor = 'rgba(0,0,0,.4)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 6;
-    if (tool === 'knife') { ctx.rotate(input.angle); this.knife(ctx); }
-    else if (tool === 'hand') this.hand(ctx, !!held);
+    if (tool === 'hand') this.hand(ctx, !!held);
     else {
       ctx.rotate(-0.6);
       this.brush(ctx, tool === 'vowel' ? theme.vowel : tool === 'consonant' ? theme.consonant : '#f6a6b8', tool === 'eraser');
     }
     ctx.restore();
-  }
-
-  knife(ctx) {
-    let g = ctx.createLinearGradient(0, -14, 0, 12);
-    g.addColorStop(0, '#f7fafd'); g.addColorStop(0.5, '#c9d2dc'); g.addColorStop(1, '#8793a1');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.moveTo(0, 0); ctx.quadraticCurveTo(-26, -4, -68, -13); ctx.lineTo(-70, -13); ctx.lineTo(-70, 9); ctx.quadraticCurveTo(-34, 12, 0, 0);
-    ctx.closePath(); ctx.fill();
-    ctx.shadowColor = 'transparent';
-    ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.moveTo(-6, -2.5); ctx.quadraticCurveTo(-30, -6, -66, -11); ctx.stroke();
-    ctx.strokeStyle = 'rgba(0,0,0,.25)';
-    ctx.beginPath(); ctx.moveTo(-6, 1.5); ctx.quadraticCurveTo(-34, 9, -68, 8); ctx.stroke();
-    ctx.fillStyle = '#9aa4b0'; ctx.fillRect(-74, -13, 6, 22);
-    g = ctx.createLinearGradient(0, -10, 0, 10);
-    g.addColorStop(0, '#6b4a2f'); g.addColorStop(1, '#2f1f12');
-    ctx.fillStyle = g; roundRectPath(ctx, -142, -9, 70, 19, 8); ctx.fill();
-    ctx.fillStyle = '#d8d2c6';
-    [-128, -108, -88].forEach((px) => { ctx.beginPath(); ctx.arc(px, 0.5, 2.3, 0, 6.283); ctx.fill(); });
   }
 
   brush(ctx, color, eraser) {
