@@ -373,13 +373,16 @@ export class Scene3D {
   }
 
   // Fit the camera so the whole board sits inside the free area (between the top bar and the toolbar).
-  fit(nLetters) {
+  fit(nLetters, nSyll = 3) {
     const { W, H } = this.size;
     const m = this.margins;
-    // On a tall (phone) screen there is spare height but little width: a narrower, deeper board keeps the
-    // tiles big enough to slice.
+    // A tall (phone) screen has spare height but little width. There the board is only as wide as the row plus
+    // the gaps its cuts open (5 cm each side per cut), and the width is fitted on the row itself, so
+    // the board's nearer corners may run off the sides. Height is still fitted on the whole board.
     const portrait = W / H < 0.8;
-    const bx = Math.max(nLetters * TILE.w * 0.62, portrait ? 0.9 : 1.25);
+    const bx = portrait
+      ? (nLetters * TILE.w) / 2 + (nSyll - 1) * 0.05 + 0.02
+      : Math.max(nLetters * TILE.w * 0.62, 1.25);
     const bz = 0.55; // blocks only move left/right, so the board only needs to be a little deeper than a block
     this.bx = bx;
     this.bz = bz;
@@ -389,7 +392,10 @@ export class Scene3D {
     cam.clearViewOffset();
     cam.updateProjectionMatrix();
     const target = new THREE.Vector3(0, 0.1, 0);
-    const corners = [[-bx, 0, -bz], [bx, 0, -bz], [bx, 0, bz], [-bx, 0, bz]].map((c) => new THREE.Vector3(...c));
+    const V = (a) => new THREE.Vector3(...a);
+    const corners = [[-bx, 0, -bz], [bx, 0, -bz], [bx, 0, bz], [-bx, 0, bz]].map(V);
+    const row = [[-bx, 0, TILE.d / 2], [bx, 0, TILE.d / 2], [-bx, TILE.h, TILE.d / 2], [bx, TILE.h, TILE.d / 2]].map(V);
+    const xPts = portrait ? row : corners;
     const place = (D) => {
       cam.position.set(0, target.y + Math.sin(ELEV) * D, Math.cos(ELEV) * D);
       cam.lookAt(target);
@@ -399,9 +405,13 @@ export class Scene3D {
       let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
       for (const c of corners) {
         const p = c.clone().project(cam);
-        const px = (p.x * 0.5 + 0.5) * W;
         const py = (-p.y * 0.5 + 0.5) * H;
-        x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+        y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+      }
+      for (const c of xPts) {
+        const p = c.clone().project(cam);
+        const px = (p.x * 0.5 + 0.5) * W;
+        x0 = Math.min(x0, px); x1 = Math.max(x1, px);
       }
       return { x0, x1, y0, y1 };
     };

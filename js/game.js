@@ -87,14 +87,37 @@ export class Game {
     const H = window.innerHeight;
     const topH = ($('#topbar') || { offsetHeight: 56 }).offsetHeight;
     const botH = ($('#toolbar') || { offsetHeight: 90 }).offsetHeight;
-    const mx = Math.max(10, W * 0.025);
+    const mx = W / H < 0.8 ? 6 : Math.max(10, W * 0.025);
     this.scene.resize(W, H, { left: mx, right: mx, top: topH + 6, bottom: botH + 6 });
     this.overlay.resize(W, H);
     this.fitBoard();
+    this.rotateTip(W, H, topH);
+  }
+
+  // One-time tip on a phone held upright: the word must stay on one line, so sideways gives bigger letters.
+  // Turning the phone, or closing the tip, retires it for good.
+  rotateTip(W, H, topH) {
+    const el = $('#rotate-tip');
+    if (!el) return;
+    const KEY = 'wordslicer.rotateTip';
+    let seen = false;
+    try { seen = localStorage.getItem(KEY) === '1'; } catch (_) { /* private mode */ }
+    const retire = () => { el.hidden = true; try { localStorage.setItem(KEY, '1'); } catch (_) { /* private mode */ } };
+    if (!el.dataset.bound) {
+      el.dataset.bound = '1';
+      $('#rotate-tip-close').addEventListener('click', retire);
+    }
+    const phonePortrait = W / H < 0.8 && W < 600;
+    if (seen || !phonePortrait) {
+      if (!el.hidden) retire();
+      return;
+    }
+    el.style.top = `${topH + 8}px`;
+    el.hidden = false;
   }
 
   fitBoard() {
-    const { bx, bz } = this.scene.fit(this.entry ? this.entry.word.length : 8);
+    const { bx, bz } = this.scene.fit(this.entry ? this.entry.word.length : 8, this.entry ? this.entry.syllables : 3);
     this.physics.setup({ bx, bz });
   }
 
