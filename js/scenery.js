@@ -250,33 +250,19 @@ function blade(K, n, near, h0, h1, area, lean = 0.3) {
 
 function garden(K) {
   const { bx, bz } = K;
-  const W = bx + 0.07; const D = bz + 0.07;
-  // grass around the turf slab, thick near the slab edge, thinner and taller farther out
-  const ring = (rmin, rmax) => () => {
-    const side = K.rnd();
-    const d = K.r(rmin, rmax);
-    if (side < 0.34) return [K.r(-W, W), -D - d];          // behind
-    if (side < 0.6) return [K.r(-W, W), D + d];             // in front
-    return [(K.rnd() < 0.5 ? -1 : 1) * (W + d), K.r(-D, D)]; // sides
-  };
-  blade(K, 900, 0, 0.05, 0.11, ring(0.0, 0.2), 0.35);
-  blade(K, 1200, 0, 0.08, 0.2, ring(0.15, 1.2), 0.3);
-  blade(K, 1400, 0, 0.18, 0.42, () => { const z = -D - K.r(0.5, 5); return [K.r(-1, 1) * K.span(z), z]; }, 0.25);
-  // tufts that droop over the slab edge
-  const tuft = [];
-  for (let i = 0; i < 260; i++) {
-    const side = Math.floor(K.rnd() * 4); const t = K.r(-1, 1);
-    let x; let z; let ry;
-    if (side === 0) { x = t * W; z = -D + 0.02; ry = 0; } else if (side === 1) { x = t * W; z = D - 0.02; ry = 0; } else if (side === 2) { x = -W + 0.02; z = t * D; ry = 1; } else { x = W - 0.02; z = t * D; ry = 1; }
-    tuft.push({ x, y: -0.05, z, rx: side === 0 ? -0.5 : side === 1 ? 0.5 : 0, rz: side === 2 ? 0.5 : side === 3 ? -0.5 : 0, ry: K.r(0, TAU), s: [1, K.r(0.5, 1.0) / 0.1 * 0.07, 1], c: K.pick(['#4c8f33', '#5da13d', '#76b44a']) });
-  }
-  K.inst(new THREE.ConeGeometry(0.01, 0.1, 3).translate(0, 0.05, 0), K.m('#ffffff', { roughness: 0.8 }), tuft, { cast: false });
+  // Grass everywhere except the strip the blocks slide along. Short blades near the row (so letters stay readable),
+  // longer ones farther out.
+  const lane = 0.17;
+  const near = (zmax) => () => { const s = K.rnd() < 0.5 ? -1 : 1; return [K.r(-1, 1) * (bx + 0.3), s * K.r(lane, zmax)]; };
+  blade(K, 1300, 0, 0.03, 0.06, near(0.4), 0.3);
+  blade(K, 1300, 0, 0.05, 0.12, () => { const z = K.rnd() < 0.7 ? -K.r(0.35, 1.6) : K.r(0.35, 1.0); return [K.r(-1, 1) * K.span(z), z]; }, 0.3);
+  blade(K, 1400, 0, 0.18, 0.4, () => { const z = -K.r(1.0, 4.5); return [K.r(-1, 1) * K.span(z), z]; }, 0.25);
   // flowers: daisies and buttercups on the lawn margins and in the meadow
   const stems = []; const heads = []; const centres = [];
   for (let i = 0; i < 60; i++) {
-    const onSlab = i < 22;
+    const onSlab = i < 22; // near the row, within the short grass
     let x; let z; let y;
-    if (onSlab) { x = K.r(-1, 1) * (bx - 0.05); z = K.rnd() < 0.5 ? K.r(0.2, bz) : -K.r(0.2, bz); y = 0; } else { [x, z] = K.rnd() < 0.7 ? K.behind(0.05, 3) : K.front(0.1, 0.9); y = G; }
+    if (onSlab) { x = K.r(-1, 1) * (bx - 0.05); z = K.rnd() < 0.5 ? K.r(0.2, 0.5) : -K.r(0.2, 0.5); y = 0; } else { [x, z] = K.rnd() < 0.7 ? K.behind(0.05, 3) : K.front(0.1, 0.9); y = G; }
     const h = K.r(0.07, 0.15);
     stems.push({ x, y: y + h / 2, z, s: [1, h / 0.1, 1] });
     const col = K.pick(['#ffffff', '#ffffff', '#ffe34a', '#ff8fb3', '#c9a8ff']);
@@ -336,16 +322,7 @@ function snow(K) {
   const { bx, bz } = K;
   const W = bx + 0.07; const D = bz + 0.07;
   const snowM = K.m('#f6faff', { roughness: 0.9, sheen: 0.5, sheenColor: '#cfe6ff', sheenRoughness: 0.6 });
-  // drifts that blend the slab into the ground
-  const mounds = [];
-  const edge = (t, side, d) => (side === 0 ? [t * W, -D - d] : side === 1 ? [t * W, D + d] : side === 2 ? [-W - d, t * D] : [W + d, t * D]);
-  for (let i = 0; i < 90; i++) {
-    const side = Math.floor(K.rnd() * 4); const [x, z] = edge(K.r(-1, 1), side, K.r(-0.03, 0.04)); const sc = K.r(0.035, 0.075);
-    mounds.push({ x, y: G + 0.02, z, s: [sc * 1.3, sc * 0.75, sc * 1.1], ry: K.r(0, 3) });
-  }
-  const mm = K.inst(sph(1, 14, 10), snowM, mounds);
-  mm.castShadow = false;
-  // larger drifts behind
+  // drifts
   for (let i = 0; i < 14; i++) {
     const [x, z] = K.behind(0.4, 3);
     const sc = K.r(0.15, 0.4);
@@ -659,14 +636,6 @@ function moon(K) {
     const [x, z] = K.rnd() < 0.6 ? K.behind(0.05, 2.5) : K.front(0.05, 0.9); const sc = K.r(0.01, 0.03);
     K.add(rock, K.m('#6a6c73', { roughness: 1 }), x, G + sc * 0.3, z, { s: [sc, sc * 0.6, sc], cast: false });
   }
-  // beacon lights along the pad edge
-  const lights = [];
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) lights.push([sx * (bx + 0.07), sz * (bz + 0.07)]);
-  lights.forEach(([x, z], i) => {
-    const m = glow(i % 2 ? '#7df9ff' : '#ffb000');
-    K.add(sph(0.022, 12, 8), m, x, 0.01, z, { cast: false });
-    K.anim.push((now, dt, still) => { m.color.set(i % 2 ? '#7df9ff' : '#ffb000').multiplyScalar(still ? 1 : 0.55 + 0.45 * Math.sin(now * 0.004 + i * 1.6)); });
-  });
 }
 
 const BUILDERS = { wood, kitchen, garden, snow, candy, beach, moon };

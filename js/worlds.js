@@ -1,11 +1,11 @@
-// Worlds: what a theme is made of. Each world has a block material and shape (tofu, granite, ice ...), a ground,
-// a board surface and scenery. Everything is generated at runtime (canvas textures + primitives), nothing to download.
+// Worlds: what a theme is made of. Each world has a block material and shape (tofu, granite, ice ...), a ground
+// and scenery. Everything is generated at runtime (canvas textures + primitives), nothing to download.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { TILE } from './constants.js';
 import { hexToRgb, mulberry32, clamp } from './lighting.js';
 
-export const GROUND_Y = -0.09; // table height (matches BOARD_T in scene.js)
+export const GROUND_Y = 0; // the ground is the surface the blocks sit on
 
 // ---------- tileable value noise ----------
 const hash = (x, y, s) => { const n = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453; return n - Math.floor(n); };
@@ -221,7 +221,7 @@ function blockGeo(look, variant) {
   return g;
 }
 
-// ---------- ground and board surfaces ----------
+// ---------- ground surfaces ----------
 // A surface spec: { color, map (canvas), normal (canvas), scale (metres per texture repeat; omit to stretch once),
 // normalScale, roughness, metalness, clearcoat, clearcoatRoughness }.
 const TAU = Math.PI * 2;
@@ -239,18 +239,6 @@ function earth({ size = 512, a, b, p = 6, oct = 4, speckle = 0, speck = '#ffffff
   return { map, normal: normalCanvas(hf, size, size, relief * 3) };
 }
 
-function strata(base, seed) { // soil / sandstone side: horizontal bands with stones
-  const B = rgb(base);
-  const map = paintPx(256, 128, (u, v, o) => {
-    const band = fbm(u * 0.5, v, 2, 3, seed) * 0.5 + 0.5 * vnoise(u, v, 2, 14, seed + 1);
-    mix3([B[0] * 0.7, B[1] * 0.7, B[2] * 0.7], [Math.min(255, B[0] * 1.15), Math.min(255, B[1] * 1.12), Math.min(255, B[2] * 1.1)], band, o);
-    const s = hash(Math.floor(u * 256), Math.floor(v * 128), seed + 3);
-    if (s > 0.96) mix3(o, [200, 190, 170], 0.5, o);
-  });
-  const hf = field(256, 128, (u, v) => hash(Math.floor(u * 256), Math.floor(v * 128), seed + 3) * 0.5 + fbm(u, v, 6, 3, seed));
-  return { map, normal: normalCanvas(hf, 256, 128, 2.2) };
-}
-
 export function surfaces(S, theme) {
   const w = WORLDS[theme.world] || WORLDS.contrast;
   return w.surfaces(S, theme);
@@ -259,22 +247,18 @@ export function surfaces(S, theme) {
 const WORLDS = {
   contrast: {
     surfaces: (S, t) => ({
-      ground: { color: t.table, roughness: 0.95 },
-      top: { color: t.board.top, roughness: 0.38 },
-      side: { color: t.board.top, roughness: 0.38 },
-      radius: 0.03,
+      ground: { color: '#c4c4c4', roughness: 0.6 },
     }),
   },
 
   wood: {
     surfaces: (S, t) => {
-      const top = S.woodCanvas(1024, 512, t.board.top, t.board.grain, 7, 230);
-      // a pale plank floor under the board
+      // a plank floor
       const [fc, x] = canvas2d(1024, 1024);
       const rnd = mulberry32(21);
       for (let i = 0; i < 6; i++) {
         const h = 1024 / 6;
-        const pl = S.woodCanvas(1024, 256, ['#e9d5a8', '#e4cd9c', '#ecd9b0', '#dfc693'][i % 4], '#a07838', 30 + i, 40);
+        const pl = S.woodCanvas(1024, 256, ['#bd8f58', '#b5854e', '#c3965f', '#ad7c45'][i % 4], '#6b3f17', 30 + i, 40);
         x.drawImage(pl, 0, i * h, 1024, h);
         x.fillStyle = 'rgba(70,40,10,.35)'; x.fillRect(0, i * h, 1024, 3);
         const cut = rnd() * 900 + 60;
@@ -282,26 +266,13 @@ const WORLDS = {
       }
       return {
         ground: { map: fc, scale: 2.2, roughness: 0.7, color: '#ffffff' },
-        top: { map: top, roughness: 0.68, color: '#ffffff' },
-        side: { map: top, roughness: 0.68, color: '#ffffff' },
-        radius: 0.03,
       };
     },
   },
 
   kitchen: {
     surfaces: (S, t) => {
-      // polished quartz counter with faint grey veins
-      const hf = field(512, 512, (u, v) => fbm(u, v, 5, 4, 12));
-      const veins = field(512, 512, (u, v) => Math.abs(fbm(u, v, 3, 4, 31) - 0.5));
-      const map = paintPx(512, 512, (u, v, o) => {
-        const i = Math.floor(v * 512) * 512 + Math.floor(u * 512);
-        mix3([236, 233, 226], [222, 219, 212], hf[i], o);
-        mix3(o, [168, 166, 164], (1 - step(0, 0.018, veins[i])) * 0.55, o);
-        const sp = hash(Math.floor(u * 512), Math.floor(v * 512), 6);
-        if (sp > 0.985) mix3(o, [150, 148, 146], 0.5, o);
-      });
-      // maple butcher-block board with knife marks
+      // a maple butcher-block counter with knife marks
       const top = S.woodCanvas(1024, 512, '#dcb77f', '#9a6b30', 17, 200);
       const x = top.getContext('2d');
       const rnd = mulberry32(41);
@@ -313,10 +284,7 @@ const WORLDS = {
         x.beginPath(); x.moveTo(px, py); x.lineTo(px + Math.cos(a) * len, py + Math.sin(a) * len); x.stroke();
       }
       return {
-        ground: { map, scale: 1.8, roughness: 0.22, clearcoat: 0.5, clearcoatRoughness: 0.2, color: '#ffffff' },
-        top: { map: top, roughness: 0.6, color: '#ffffff' },
-        side: { map: top, roughness: 0.6, color: '#e8d2b0' },
-        radius: 0.03,
+        ground: { map: top, scale: 1.5, roughness: 0.6, color: '#ffffff' },
       };
     },
   },
@@ -324,13 +292,8 @@ const WORLDS = {
   garden: {
     surfaces: (S, t) => {
       const meadow = earth({ a: '#3f6a26', b: '#8db84e', p: 7, oct: 5, speckle: 0.05, speck: '#c8e08a', fine: 0.4, seed: 5, relief: 1.2 });
-      const lawn = earth({ a: '#4d8030', b: '#9bc95a', p: 12, oct: 4, speckle: 0.07, speck: '#d4eb9a', fine: 0.5, seed: 8, relief: 1.6 });
-      const soil = strata('#5b3d27', 4);
       return {
         ground: { ...meadow, scale: 2.6, roughness: 1, color: '#ffffff' },
-        top: { ...lawn, scale: 0.7, roughness: 1, color: '#ffffff' },
-        side: { ...soil, scale: 0.4, roughness: 1, color: '#ffffff' },
-        radius: 0.03,
       };
     },
   },
@@ -338,12 +301,8 @@ const WORLDS = {
   snow: {
     surfaces: (S, t) => {
       const drift = earth({ a: '#d5e3f2', b: '#ffffff', p: 4, oct: 5, speckle: 0.012, speck: '#ffffff', fine: 0.15, seed: 6, relief: 1.1 });
-      const slab = earth({ a: '#dde9f6', b: '#ffffff', p: 8, oct: 4, speckle: 0.02, speck: '#ffffff', fine: 0.3, seed: 12, relief: 1.4 });
       return {
         ground: { ...drift, scale: 3.2, roughness: 0.85, color: '#ffffff' },
-        top: { ...slab, scale: 0.9, roughness: 0.8, color: '#ffffff' },
-        side: { ...slab, scale: 0.5, roughness: 0.8, color: '#e3eefb' },
-        radius: 0.04,
       };
     },
   },
@@ -365,27 +324,15 @@ const WORLDS = {
         mx.strokeStyle = cols[i % cols.length]; mx.lineWidth = 4.5;
         mx.beginPath(); mx.moveTo(px, py); mx.lineTo(px + Math.cos(a) * 11, py + Math.sin(a) * 11); mx.stroke();
       }
-      // chocolate bar: raised squares with bevels
-      const sq = (u, v) => { const a = (u * 4) % 1; const b = (v * 4) % 1; return Math.min(a, 1 - a, b, 1 - b); };
-      const ch = field(256, 256, (u, v) => step(0, 0.16, sq(u, v)));
-      const chMap = paintPx(256, 256, (u, v, o) => {
-        const e = step(0, 0.16, sq(u, v));
-        mix3([40, 22, 14], [92, 52, 32], e, o);
-        const light = (u * 4) % 1 + (v * 4) % 1;
-        if (e > 0.2 && e < 0.9) mix3(o, light < 1 ? [150, 96, 66] : [30, 16, 10], 0.35, o);
-      });
       return {
         ground: { map, normal: normalCanvas(hf, 512, 512, 3), scale: 1.6, roughness: 0.4, clearcoat: 0.35, clearcoatRoughness: 0.3, color: '#ffffff' },
-        top: { map: chMap, normal: normalCanvas(ch, 256, 256, 6), scale: 0.4, roughness: 0.32, clearcoat: 0.7, clearcoatRoughness: 0.2, color: '#ffffff' },
-        side: { color: '#3a2014', roughness: 0.3, clearcoat: 0.6 },
-        radius: 0.035,
       };
     },
   },
 
   beach: {
     surfaces: (S, t) => {
-      const ripple = (wet) => {
+      const ripple = (wet = false) => {
         const hf = field(512, 512, (u, v) => {
           const w = v * 7 + 1.4 * fbm(u, v, 3, 3, 8);
           return (Math.sin(w * TAU) * 0.5 + 0.5) * (wet ? 0.35 : 1) * 0.6 + 0.4 * hash(Math.floor(u * 256), Math.floor(v * 256), 3) * 0.3 + 0.2 * fbm(u, v, 9, 3, 4);
@@ -401,9 +348,6 @@ const WORLDS = {
       };
       return {
         ground: { ...ripple(false), scale: 1.8, roughness: 1, color: '#ffffff' },
-        top: { ...ripple(true), scale: 0.8, roughness: 0.55, clearcoat: 0.15, clearcoatRoughness: 0.5, color: '#ffffff' },
-        side: { ...strata('#d7b97c', 2), scale: 0.4, roughness: 1, color: '#ffffff' },
-        radius: 0.035,
       };
     },
   },
@@ -429,28 +373,8 @@ const WORLDS = {
         const k = hf[Math.floor(v * N) * N + Math.floor(u * N)];
         mix3([96, 96, 104], [176, 176, 184], clamp(k * 1.1 - 0.05, 0, 1), o);
       });
-      const pad = (() => {
-        const [c, x] = canvas2d(256, 256);
-        x.fillStyle = '#2a3247'; x.fillRect(0, 0, 256, 256);
-        x.strokeStyle = '#4d5a7c'; x.lineWidth = 4; x.strokeRect(6, 6, 244, 244);
-        x.strokeStyle = 'rgba(125,249,255,.5)'; x.lineWidth = 2; x.strokeRect(20, 20, 216, 216);
-        x.fillStyle = '#7d89ac';
-        for (const [px, py] of [[13, 13], [243, 13], [13, 243], [243, 243]]) { x.beginPath(); x.arc(px, py, 5, 0, TAU); x.fill(); }
-        for (let i = 0; i < 70; i++) { x.fillStyle = `rgba(255,255,255,${rnd() * 0.05})`; x.fillRect(rnd() * 256, rnd() * 256, 40, 1.5); }
-        return c;
-      })();
-      const haz = (() => {
-        const [c, x] = canvas2d(128, 64);
-        x.fillStyle = '#f2b800'; x.fillRect(0, 0, 128, 64);
-        x.fillStyle = '#1a1a1a';
-        for (let i = -4; i < 8; i++) { x.beginPath(); x.moveTo(i * 24, 64); x.lineTo(i * 24 + 12, 64); x.lineTo(i * 24 + 44, 0); x.lineTo(i * 24 + 32, 0); x.fill(); }
-        return c;
-      })();
       return {
         ground: { map, normal: normalCanvas(hf, N, N, 3.2), scale: 5, roughness: 1, color: '#ffffff' },
-        top: { map: pad, scale: 0.5, roughness: 0.42, metalness: 0.7, color: '#ffffff' },
-        side: { map: haz, scale: 0.2, roughness: 0.6, metalness: 0.2, color: '#ffffff' },
-        radius: 0.02,
       };
     },
   },

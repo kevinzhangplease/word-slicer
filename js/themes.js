@@ -1,12 +1,11 @@
-// A theme is a palette plus a `world` (see worlds.js: ground, board and scenery) and, for most, a block `look` (tofu, rock, ice ...). Add a theme by adding an entry here; the picker builds itself.
+// A theme is a palette plus a `world` (see worlds.js: ground and scenery) and, for most, a block `look` (tofu, rock, ice ...). Add a theme by adding an entry here; the picker builds itself.
 // vowel/consonant are the two brush colours. "contrast" uses the Okabe-Ito orange/blue pair,
 // which stays distinguishable for the common kinds of colour blindness.
 export const THEMES = {
   wood: {
     name: 'Wooden Toys', dark: false, world: 'wood',
     vignette: 0.42,
-    mat: 'wood', table: '#e9dfc9', light: '#fff0d4', ground: '#b08a5a', env: 0.32, exposure: 0.95, boardMat: 'wood',
-    board: { top: '#d9a468', bottom: '#b07a40', grain: '#6b3f17', edge: '#6a4018' },
+    mat: 'wood', table: '#e9dfc9', light: '#fff0d4', ground: '#b08a5a', env: 0.32, exposure: 0.95,
     block: { base: '#eab864', ink: '#3a2410', grain: '#9a6420', grainA: 0.34, gloss: 0 },
     vowel: '#e5484d', consonant: '#2e7bd6',
     blade: '#ffffff', glow: '#ffd98a',
@@ -80,8 +79,7 @@ export const THEMES = {
   contrast: {
     name: 'High Contrast', dark: false, world: 'contrast',
     vignette: 0.18,
-    mat: 'flat', table: '#f2f2f2', light: '#ffffff', ground: '#888888', env: 0.2, exposure: 0.95, boardMat: 'smooth',
-    board: { top: '#c9c9c9', bottom: '#9a9a9a', grain: '#555555', edge: '#2b2b2b' },
+    mat: 'flat', table: '#f2f2f2', light: '#ffffff', ground: '#888888', env: 0.2, exposure: 0.95,
     block: { base: '#ffffff', ink: '#000000', grain: '#dddddd', grainA: 0, gloss: 0, outline: '#000000' },
     vowel: '#e69f00', consonant: '#0072b2',
     blade: '#ffffff', glow: '#ffffff',

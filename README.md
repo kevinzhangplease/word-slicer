@@ -27,10 +27,10 @@ Add `?quality=low` to the URL on a slow device (no antialiasing, small shadow ma
 
 Settings (saved in the browser): **Level** (Easy 2 syllables, Medium 3, Hard 4+, Mixed), **Tasks** (slice +
 paint, slice only, paint only), **Theme**, sound on/off. Each theme is a small world, not a recolour: Wooden Toys (wooden blocks on a plank
-floor with toys), Tofu Kitchen (tofu on a butcher block, steamer, wok, soy sauce), Rock Garden (cube granite on a
-turf, meadow with mushrooms and butterflies), Ice & Snow (ice cubes on a snow slab, pines, snowman, snowfall),
-Candy Shop (sugar-dusted gummies on a chocolate bar, lollipops and canes), Sandcastle Beach (packed-sand blocks on
-wet sand, shells, bucket, crab) and Moon Base (brushed-metal cargo cubes on a landing pad, dome, rover), plus High
+floor with toys), Tofu Kitchen (tofu on a butcher-block counter, steamer, wok, soy sauce), Rock Garden (cube granite in a
+meadow with mushrooms and butterflies), Ice & Snow (ice cubes in a snowfield, pines, snowman, snowfall),
+Candy Shop (sugar-dusted gummies on pink frosting, lollipops and canes), Sandcastle Beach (packed-sand blocks on
+the beach, shells, bucket, crab) and Moon Base (brushed-metal cargo cubes on moon dust, dome, rover), plus High
 Contrast.
 The High Contrast theme uses an orange/blue brush pair that stays distinguishable for common kinds of colour
 blindness. **Check** grades the cuts you see: pieces that are neighbours in the word and stuck together count as uncut.

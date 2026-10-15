@@ -9,7 +9,6 @@ import { lighten, darken, isLight, mulberry32, clamp, easeOutBack, rgba, roundRe
 const FONT = '"Atkinson Hyperlegible", "Lexend", "Trebuchet MS", system-ui, sans-serif';
 const FOV = 35;
 const ELEV = (28 * Math.PI) / 180; // camera elevation above the table
-const BOARD_T = 0.09; // board thickness, top surface at y = 0
 
 const _q = new THREE.Quaternion();
 const _qi = new THREE.Quaternion();
@@ -44,15 +43,9 @@ export class Scene3D {
 
     this.table = new THREE.Mesh(new THREE.PlaneGeometry(90, 90), new THREE.MeshStandardMaterial({ roughness: 0.95 }));
     this.table.rotation.x = -Math.PI / 2;
-    this.table.position.y = -BOARD_T;
     this.table.receiveShadow = true;
     this.scene.add(this.table);
-    this.board = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
-    this.boardMats = null;
     this.surf = null;
-    this.board.castShadow = true;
-    this.board.receiveShadow = true;
-    this.scene.add(this.board);
 
     this.tileGeo = new RoundedBoxGeometry(TILE.w * 0.992, TILE.h * 0.992, TILE.d * 0.992, 3, 0.014);
     this.decalGeo = new THREE.PlaneGeometry(TILE.w - 0.03, TILE.h - 0.03);
@@ -73,7 +66,7 @@ export class Scene3D {
   }
 
   // A chef's knife: extruded steel blade (tip at the origin, pointing +x) and a riveted wooden handle.
-  // It lives just in front of the blocks' front faces and casts a real shadow on them and the board.
+  // It lives just in front of the blocks' front faces and casts a real shadow on them and the ground.
   makeKnife() {
     const k = 0.0028; // metres per pixel of the old 2D sprite, so the shape and size feel the same
     const s = new THREE.Shape();
@@ -198,7 +191,7 @@ export class Scene3D {
     this.pieces.clear();
   }
 
-  // A ground/board surface spec -> material. `scale` (metres per repeat) is applied in fit() once the board size is known.
+  // A ground surface spec -> material. `scale` is metres per texture repeat.
   surfaceMaterial(spec) {
     const m = new THREE.MeshPhysicalMaterial({
       color: spec.color || '#ffffff', roughness: spec.roughness ?? 0.8, metalness: spec.metalness || 0,
@@ -225,23 +218,10 @@ export class Scene3D {
   }
 
   buildSurfaces(theme) {
-    if (this.surf) {
-      this.disposeMat(this.groundMat);
-      for (const m of new Set(this.boardMats)) this.disposeMat(m);
-    }
-    const sp = surfaces(this, theme);
-    this.surf = sp;
-    this.groundMat = this.surfaceMaterial(sp.ground);
+    if (this.surf) this.disposeMat(this.groundMat);
+    this.surf = surfaces(this, theme);
+    this.groundMat = this.surfaceMaterial(this.surf.ground);
     this.table.material = this.groundMat;
-    const top = this.surfaceMaterial(sp.top);
-    const side = this.surfaceMaterial(sp.side);
-    const sideX = side;
-    const sideZ = side.clone(); // clone shares textures; repeats are set per orientation in fit()
-    if (side.map) { sideZ.map = side.map.clone(); sideZ.map.needsUpdate = true; }
-    if (side.normalMap) { sideZ.normalMap = side.normalMap.clone(); sideZ.normalMap.needsUpdate = true; }
-    sideZ.userData.scale = side.userData.scale;
-    this.boardMats = [sideX, sideX, top, sideX, sideZ, sideZ];
-    this.board.material = this.boardMats;
     this.applyRepeats();
   }
 
@@ -256,20 +236,12 @@ export class Scene3D {
     if (this.scenery) this.scene.add(this.scenery.group);
   }
 
-  // Texture repeats follow the board size, so grass, grain and tiles keep a constant real-world scale.
+  // Ground textures keep a constant real-world scale.
   applyRepeats() {
-    if (!this.boardMats) return;
-    const set = (m, w, h) => {
-      const k = m.userData.scale;
-      if (!k) return;
-      for (const t of [m.map, m.normalMap]) if (t) t.repeat.set(w / k, h / k);
-    };
-    const W = 2 * this.bx + 0.14; const D = 2 * this.bz + 0.14;
-    const [sx, , top, , sz] = this.boardMats;
-    set(top, W, D);
-    set(sx, D, BOARD_T);
-    set(sz, W, BOARD_T);
-    set(this.groundMat, 90, 90);
+    const m = this.groundMat;
+    const k = m && m.userData.scale;
+    if (!k) return;
+    for (const t of [m.map, m.normalMap]) if (t) t.repeat.set(90 / k, 90 / k);
   }
 
   baseMaterial(gi) {
@@ -499,11 +471,7 @@ export class Scene3D {
     cam.setViewOffset(W, H, -sx, -sy, W, H);
     cam.updateMatrixWorld(true);
 
-    // board + lights follow the board size
-    this.board.geometry.dispose();
-    this.board.geometry = new RoundedBoxGeometry(2 * bx + 0.14, BOARD_T, 2 * bz + 0.14, 3, this.surf ? this.surf.radius : 0.03);
-    this.applyRepeats();
-    this.board.position.set(0, -BOARD_T / 2, 0);
+    // lights follow the playing area
     const dir = new THREE.Vector3(-0.5, 0.82, 0.42).normalize();
     this.key.position.copy(dir.multiplyScalar(9));
     this.key.target.position.set(0, 0, 0);
