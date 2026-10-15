@@ -56,6 +56,8 @@ blindness. **Check** grades the cuts you see: pieces that are neighbours in the 
   why this is a curated list rather than a generated one.
 - **Vowels** – `a e i o u`, plus `y` when it is not the start of a syllable before a vowel (`hap-py`: vowel,
   `yel-low`: consonant). `w` is always a consonant.
+- **Font** – block letters use Atkinson Hyperlegible (bundled), designed so that lowercase `l`, capital `I` and `1`
+  look different.
 - **Sound** – effects are synthesised with Web Audio. Syllables are read with the browser's speech synthesis,
   so voice quality depends on the device.
 
@@ -79,6 +81,6 @@ Deliberate rules, for readability and playability:
 index.html  style.css
 js/  main · game (state, tools, checking, UI) · scene (Three.js) · overlay (cursors, marks, particles)
      physics (cannon-es, hand) · magnets · input · fx · audio · speech · themes · words · lighting · constants
-vendor/  three/  cannon-es.js
+vendor/  three/  cannon-es.js  fonts/ (Atkinson Hyperlegible, OFL)
 scripts/check-words.mjs
 ```

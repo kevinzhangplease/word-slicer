@@ -4,7 +4,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { TILE } from './constants.js';
 import { lighten, darken, isLight, mulberry32, clamp, easeOutBack, rgba, roundRectPath } from './lighting.js';
 
-const FONT = '"Lexend", "Andika", "Trebuchet MS", system-ui, sans-serif';
+const FONT = '"Atkinson Hyperlegible", "Lexend", "Trebuchet MS", system-ui, sans-serif';
 const FOV = 35;
 const ELEV = (28 * Math.PI) / 180; // camera elevation above the table
 const BOARD_T = 0.09; // board thickness, top surface at y = 0

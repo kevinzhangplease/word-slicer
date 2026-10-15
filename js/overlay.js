@@ -1,7 +1,7 @@
 import { rgba, roundRectPath, clamp } from './lighting.js';
 import { TILE } from './constants.js';
 
-const FONT = '"Lexend", "Andika", "Trebuchet MS", system-ui, sans-serif';
+const FONT = '"Atkinson Hyperlegible", "Lexend", "Trebuchet MS", system-ui, sans-serif';
 
 // The 2D layer drawn above the WebGL canvas: tool cursors, blade trail, snap guides, check marks,
 // magnet field lines and particles. World positions go through scene.project().

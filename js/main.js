@@ -13,5 +13,5 @@ function start() {
 }
 
 // Let the web font load first so the first frame already uses it (falls back after 1.5 s).
-const fonts = document.fonts && document.fonts.load ? document.fonts.load('700 40px Lexend') : Promise.resolve();
+const fonts = document.fonts && document.fonts.load ? document.fonts.load('700 40px "Atkinson Hyperlegible"') : Promise.resolve();
 Promise.race([fonts, new Promise((r) => setTimeout(r, 1500))]).catch(() => {}).then(start);
