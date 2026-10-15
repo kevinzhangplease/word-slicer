@@ -146,6 +146,7 @@ export class Game {
     this.hoverGap = null;
     this.hintLevel = 0;
     this.speaking = null;
+    this.blending = false;
     this.hideToast();
     this.fitBoard();
     this.physics.addPiece(0, entry.word.length, 0, 1.5, 0, 0);
@@ -324,16 +325,65 @@ export class Game {
   onMagnetEvent(e) {
     const x = e.a;
     const y = e.b;
+    if (this.blending && e.type === 'snap' && x && x.piece) this.onBlendSnap(x);
     if (!x || !y || !x.piece || !y.piece || x.piece.end !== y.piece.start) return;
     const gap = x.piece.end;
     if (e.type === 'snap') {
       this.cuts.delete(gap);
       this.history = this.history.filter((g) => g !== gap);
+      if (this.blending && !this.cuts.size) this.finishBlend();
     } else if (!this.cuts.has(gap)) {
       this.cuts.add(gap);
       this.history.push(gap);
     }
     this.clearMarks();
+  }
+
+  // ---------- slice, then blend ----------
+  // After a correct slice the kid pushes the pieces back together with the Hand. Every in-order snap reads the
+  // chunk built so far; an out-of-order snap reads what was built, so they hear that it is not the word.
+  startBlend() {
+    this.hideResult();
+    this.clearMarks();
+    this.blending = true;
+    this.setTool('hand');
+    const parts = this.piecesInOrder().map((r) => this.entry.word.slice(r.start, r.end));
+    this.toast(`Now blend it! Push the pieces together in order: ${parts.join(' → ')}`, 14000);
+  }
+
+  onBlendSnap(body) {
+    const cluster = this.physics.magnets.cluster(body).sort((a, b) => a.position.x - b.position.x);
+    const ranges = cluster.map((b) => ({ start: b.piece.start, end: b.piece.end }));
+    const inOrder = ranges.every((r, i) => !i || r.start === ranges[i - 1].end);
+    const text = ranges.map((r) => this.entry.word.slice(r.start, r.end)).join('');
+    if (inOrder) {
+      if (ranges[ranges.length - 1].end - ranges[0].start < this.entry.word.length) {
+        this.readAlong([{ start: ranges[0].start, end: ranges[ranges.length - 1].end }], { hop: false });
+      }
+    } else {
+      speech.sequence([text], { rate: 0.85 });
+      this.toast(`Hmm, "${text}" is not the word. Shake a piece off and try another order.`, 8000);
+    }
+  }
+
+  finishBlend() {
+    this.blending = false;
+    this.settings.score += 1;
+    this.save();
+    $('#score').textContent = String(this.settings.score);
+    audio.good();
+    this.fx.confetti(this.scene.size.W, [...this.theme.chips, this.theme.vowel, this.theme.consonant]);
+    const parts = this.partsFor(Words.gapsOf(this.entry.parts));
+    setTimeout(() => this.readAlong([{ start: 0, end: this.entry.word.length }], { rate: 0.75 }), 450);
+    this.hideToast();
+    $('#result-title').textContent = 'You blended it! 🎉';
+    $('#result-body').innerHTML = `<p class="answer"><b>${parts.join(' · ')}</b> → <b>${this.entry.word}</b></p>`;
+    $('#result-keep').hidden = true;
+    $('#result-blend').hidden = true;
+    const card = $('#result');
+    card.classList.add('win');
+    card.hidden = false;
+    card.style.bottom = `${$('#toolbar').offsetHeight + 16}px`;
   }
 
   undo() {
@@ -418,6 +468,14 @@ export class Game {
   // Press 3: make that cut and say the rule. Then it starts again for the next gap.
   hint() {
     const now = performance.now();
+    if (this.blending) {
+      const gap = [...this.cuts].sort((a, b) => a - b)[0];
+      const w = this.entry.word;
+      const before = [0, ...[...this.cuts].sort((a, b) => a - b)].filter((g) => g < gap).pop();
+      const after = [...[...this.cuts].sort((a, b) => a - b), w.length].find((g) => g > gap);
+      this.toast(`Push "${w.slice(before, gap)}" and "${w.slice(gap, after)}" together. Grab one and slide it to the other.`);
+      return;
+    }
     this.hintLevel += 1;
     if (this.hintLevel === 1) {
       this.letters.forEach((l) => { if (l.vowel) l.glowAt = now; });
@@ -558,6 +616,7 @@ export class Game {
     $('#result-title').textContent = ok ? 'Great job! 🎉' : 'Almost there!';
     $('#result-body').innerHTML = `<ul>${rows.join('')}</ul>${answer}`;
     $('#result-keep').hidden = ok;
+    $('#result-blend').hidden = !(res.slice && res.slice.ok && this.cuts.size);
     card.classList.toggle('win', ok);
     card.hidden = false;
     card.style.bottom = `${$('#toolbar').offsetHeight + 16}px`;
@@ -609,6 +668,7 @@ export class Game {
     $('#btn-next').addEventListener('click', () => this.newWord());
     $('#result-next').addEventListener('click', () => this.newWord());
     $('#result-keep').addEventListener('click', () => { this.hideResult(); });
+    $('#result-blend').addEventListener('click', () => this.startBlend());
 
     window.addEventListener('keydown', (e) => {
       if (e.target.closest && e.target.closest('select, input, textarea')) return;
