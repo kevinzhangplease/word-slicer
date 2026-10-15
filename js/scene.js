@@ -108,6 +108,7 @@ export class Scene3D {
     this.cBase = new THREE.Color(theme.block.base);
     this.cVowel = new THREE.Color(theme.vowel);
     this.cCons = new THREE.Color(theme.consonant);
+    this.cGlow = new THREE.Color(theme.dark ? theme.glow : '#ffc23d');
     const r = this.renderer;
     r.toneMappingExposure = theme.exposure;
     r.setClearColor(theme.table);
@@ -423,6 +424,17 @@ export class Scene3D {
           t.paintMat.emissive.copy(target);
           t.paintMat.emissiveIntensity = done ? 0 : (1 - letter.paintT) * 0.5;
           if (!done) s = 1 + 0.1 * Math.sin(Math.PI * clamp(letter.paintT, 0, 1));
+        }
+        // hint / read-along glow, layered over the material's own emissive
+        const base = t.baseMat;
+        if (!base.userData.e0) base.userData.e0 = { c: base.emissive.clone(), i: base.emissiveIntensity };
+        base.emissive.copy(base.userData.e0.c); // the paint material resets itself above
+        base.emissiveIntensity = base.userData.e0.i;
+        const glow = game.glowFor(t.gi, now);
+        if (glow > 0) {
+          const mat = t.mesh.material;
+          mat.emissive.copy(this.cGlow);
+          mat.emissiveIntensity = Math.max(mat === t.paintMat ? mat.emissiveIntensity : 0, glow * 0.55);
         }
         if (calm && s === 1) s = 1 + 0.012 * Math.sin(now * 0.0022 + t.gi * 0.8);
         t.mesh.scale.y = s;

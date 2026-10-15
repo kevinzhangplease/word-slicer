@@ -90,18 +90,23 @@ export class Overlay {
       }
     }
     for (const m of game.cutMarks) {
-      if (m.type === 'missing') {
+      if (m.type === 'missing' || m.type === 'hint') {
         const b = bodies.find((q) => q.piece.start < m.gap && q.piece.end > m.gap);
         if (!b) continue;
         const w = b.piece.len * TILE.w;
         const lx = -w / 2 + (m.gap - b.piece.start) * TILE.w;
         const a = this.pt(b, lx, -TILE.h / 2 - 0.02, TILE.d / 2 + 0.002);
         const c = this.pt(b, lx, TILE.h / 2 + 0.05, TILE.d / 2 + 0.002);
+        const hint = m.type === 'hint';
+        const col = hint ? '#f5a300' : '#e5242b';
         ctx.save();
-        ctx.setLineDash([6, 5]); ctx.strokeStyle = '#e5242b'; ctx.lineWidth = 3;
+        ctx.setLineDash([6, 5]);
+        ctx.lineDashOffset = hint ? -now * 0.03 : 0;
+        ctx.strokeStyle = col; ctx.lineWidth = hint ? 4 : 3;
+        if (hint) { ctx.shadowColor = '#ffd54a'; ctx.shadowBlur = 10; }
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
         ctx.restore();
-        this.badge(ctx, c.x, c.y - 16, '✂', '#e5242b');
+        this.badge(ctx, c.x, c.y - 16, hint ? '?' : '✂', col);
       } else {
         const a = bodies.find((q) => q.piece.end === m.gap);
         const c = bodies.find((q) => q.piece.start === m.gap);

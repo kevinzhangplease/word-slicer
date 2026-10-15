@@ -144,6 +144,9 @@ export class Game {
     this.history = [];
     this.cutMarks = [];
     this.hoverGap = null;
+    this.hintLevel = 0;
+    this.speaking = null;
+    this.hideToast();
     this.fitBoard();
     this.physics.addPiece(0, entry.word.length, 0, 1.5, 0, 0);
     this.hideResult();
@@ -364,16 +367,8 @@ export class Game {
     const res = {};
 
     if (tasks !== 'paint') {
-      let best = null;
-      let bestD = Infinity;
-      for (const s of Words.allowedSplits(this.entry)) {
-        const d = [...s].filter((g) => !this.cuts.has(g)).length + [...this.cuts].filter((g) => !s.has(g)).length;
-        if (d < bestD) { best = s; bestD = d; }
-      }
-      const bad = [...this.cuts].filter((g) => !best.has(g));
-      const missing = [...best].filter((g) => !this.cuts.has(g));
-      const good = [...this.cuts].filter((g) => best.has(g));
-      res.slice = { ok: bestD === 0, bad, missing, good, parts: this.partsFor(best) };
+      const { best, bad, missing, good } = this.bestSplit();
+      res.slice = { ok: !bad.length && !missing.length, bad, missing, good, parts: this.partsFor(best), best };
       good.forEach((g) => this.cutMarks.push({ gap: g, type: 'ok' }));
       bad.forEach((g) => this.cutMarks.push({ gap: g, type: 'bad' }));
       missing.forEach((g) => this.cutMarks.push({ gap: g, type: 'missing' }));
@@ -395,6 +390,99 @@ export class Game {
     this.showResult(res, ok);
     if (ok) this.celebrate();
     else audio.bad();
+  }
+
+  // The accepted split closest to what the kid has cut, and how the cuts compare with it.
+  bestSplit() {
+    let best = null;
+    let bestD = Infinity;
+    for (const sp of Words.allowedSplits(this.entry)) {
+      const d = [...sp].filter((g) => !this.cuts.has(g)).length + [...this.cuts].filter((g) => !sp.has(g)).length;
+      if (d < bestD) { best = sp; bestD = d; }
+    }
+    const sorted = (a) => a.sort((x, y) => x - y);
+    return {
+      best,
+      bad: sorted([...this.cuts].filter((g) => !best.has(g))),
+      missing: sorted([...best].filter((g) => !this.cuts.has(g))),
+      good: sorted([...this.cuts].filter((g) => best.has(g))),
+    };
+  }
+
+  // Rule text for a gap of the accepted split (falls back to the main split's rule list).
+  ruleText(gap) {
+    const r = Words.ruleFor(this.entry, gap);
+    return r ? r.text : `Cut between "${this.entry.word[gap - 1]}" and "${this.entry.word[gap]}".`;
+  }
+
+  // ---------- hints ----------
+  // Press 1: glow the vowels. Press 2: point at one gap and give the rule's tip (not the answer).
+  // Press 3: make that cut and say the rule. Then it starts again for the next gap.
+  hint() {
+    const now = performance.now();
+    this.hintLevel += 1;
+    if (this.hintLevel === 1) {
+      this.letters.forEach((l) => { if (l.vowel) l.glowAt = now; });
+      this.toast('Find the vowel sounds first. Every syllable has one.');
+      return;
+    }
+    if (this.settings.tasks === 'paint') {
+      this.toast('Vowels are a, e, i, o, u, and y when it sounds like a vowel. All the other letters are consonants.');
+      this.hintLevel = 0;
+      return;
+    }
+    const { bad, missing } = this.bestSplit();
+    this.clearMarks();
+    if (bad.length) {
+      this.cutMarks = [{ gap: bad[0], type: 'bad' }];
+      this.toast(`${Words.mistakeFor(this.entry, bad[0], this.cuts)} Undo it, or slice that joint again.`);
+      this.hintLevel = 1;
+      return;
+    }
+    if (!missing.length) {
+      this.toast('Every cut is in the right place. Press Check!');
+      this.hintLevel = 1;
+      return;
+    }
+    const gap = missing[0];
+    const rule = Words.ruleFor(this.entry, gap);
+    if (this.hintLevel === 2) {
+      this.cutMarks = [{ gap, type: 'hint' }];
+      this.toast(rule ? rule.tip : 'Look for where one syllable ends and the next begins.');
+      return;
+    }
+    const body = this.physics.pieces().find((b) => b.piece.start < gap && b.piece.end > gap);
+    if (body) this.doCut(body, gap - body.piece.start, { vx: 0, vy: -2, vz: 0, f: 0.4 });
+    this.toast(this.ruleText(gap));
+    this.hintLevel = 1;
+  }
+
+  // Glow strength (0..1) for one letter: hint glows and the read-along highlight.
+  glowFor(gi, now) {
+    let g = 0;
+    const l = this.letters[gi];
+    if (l && l.glowAt) {
+      const t = (now - l.glowAt) / 1000;
+      if (t < 2.6) g = Math.max(g, (0.65 + 0.35 * Math.sin(t * 9)) * Math.min(1, (2.6 - t) / 0.4));
+    }
+    const sp = this.speaking;
+    if (sp && gi >= sp.start && gi < sp.end && now - sp.at < sp.dur) g = Math.max(g, 0.85);
+    return g;
+  }
+
+  toast(msg, ms = 7000) {
+    const t = $('#toast');
+    t.textContent = msg;
+    t.hidden = false;
+    t.style.bottom = `${$('#toolbar').offsetHeight + 16}px`;
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => this.hideToast(), ms);
+  }
+
+  hideToast() {
+    clearTimeout(this.toastTimer);
+    const t = $('#toast');
+    if (t) t.hidden = true;
   }
 
   partsFor(gaps) {
@@ -429,14 +517,18 @@ export class Game {
 
   // ---------- result card ----------
   showResult(res, ok) {
+    this.hideToast();
     const card = $('#result');
     const rows = [];
+    const esc = (t) => t.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    // the "rab | bit" part of a rule sentence is shown in the block font
+    const fmt = (t) => esc(t).replace(/: ([a-z| ]+)$/, ': <b>$1</b>');
     if (res.slice) {
       const s = res.slice;
-      const bits = [];
-      if (s.bad.length) bits.push(`${s.bad.length} wrong cut${s.bad.length > 1 ? 's' : ''}`);
-      if (s.missing.length) bits.push(`${s.missing.length} cut${s.missing.length > 1 ? 's' : ''} missing`);
-      rows.push(`<li class="${s.ok ? 'good' : 'bad'}"><b>Slicing</b> ${s.ok ? '✓ Perfect!' : '✗ ' + bits.join(', ')}</li>`);
+      rows.push(`<li class="${s.ok ? 'good' : 'bad'}"><b>Slicing</b> ${s.ok ? '✓ Perfect!' : '✗ Not quite'}</li>`);
+      for (const g of s.bad) rows.push(`<li class="why bad">✗ ${esc(Words.mistakeFor(this.entry, g, this.cuts))}</li>`);
+      for (const g of s.missing) rows.push(`<li class="why bad">✗ A cut is missing. ${fmt(this.ruleText(g))}</li>`);
+      if (s.ok) for (const g of [...s.best].sort((a, b) => a - b)) rows.push(`<li class="why">${fmt(this.ruleText(g))}</li>`);
     }
     if (res.paint) {
       const p = res.paint;
@@ -496,6 +588,7 @@ export class Game {
     $('#btn-check').addEventListener('click', () => { this.unlockAudio(); this.check(); });
     $('#btn-undo').addEventListener('click', () => this.undo());
     $('#btn-hear').addEventListener('click', () => { this.unlockAudio(); this.hear(); });
+    $('#btn-hint').addEventListener('click', () => { this.unlockAudio(); this.hint(); });
     $('#btn-next').addEventListener('click', () => this.newWord());
     $('#result-next').addEventListener('click', () => this.newWord());
     $('#result-keep').addEventListener('click', () => { this.hideResult(); });
@@ -510,6 +603,7 @@ export class Game {
       else if (k === 'z') this.undo();
       else if (k === 'n') this.newWord();
       else if (k === 'h') this.hear();
+      else if (k === 'i') this.hint();
     });
     this.setTool('knife');
   }

@@ -130,9 +130,27 @@ function partAround(entry, gap) {
   return null;
 }
 
+// A hint for each rule that points at the pattern without giving the answer away.
+export const TIPS = {
+  compound: 'Is this word made of two little words? Cut between them.',
+  cle: 'Does it end in a consonant + "le"? That consonant goes with the "le".',
+  suffix: 'Endings like "tion" and "ture" stay together in one piece.',
+  team: 'Two vowels that make one sound (a vowel team) stay in the same piece.',
+  double: 'See a double letter? Cut between the two.',
+  vccv: 'Find two consonants standing between two vowels. Cut between the consonants.',
+  open: 'One consonant between two vowels? Try cutting before it, so the first vowel says its name.',
+  closed: 'One consonant between two vowels, and the first vowel sounds short? The consonant stays with it.',
+  vv: 'Two vowels side by side that make separate sounds? Cut between them.',
+};
+
 // The phonics rule behind one syllable break of the word's main split, in kid language.
 // Returns { id, text } where text uses the word's own letters ("rab | bit").
 export function ruleFor(entry, gap) {
+  const r = classify(entry, gap);
+  return r && { ...r, tip: TIPS[r.id] };
+}
+
+function classify(entry, gap) {
   const around = partAround(entry, gap);
   if (!around) return null;
   const { left, right, index } = around;
@@ -156,8 +174,8 @@ export function ruleFor(entry, gap) {
   if (team) return { id: 'team', text: `"${team}" makes one vowel sound, so it stays in one piece: ${ex}` };
   if (L === R && !vL) return { id: 'double', text: `Split between the double letters: ${ex}` };
   if (!vL && !vR) return { id: 'vccv', text: `Two consonants stand between the vowels, so split between them: ${ex}` };
-  if (vL && !vR) return { id: 'open', text: `The first part ends with its vowel, so the vowel says its name: ${ex}` };
-  if (!vL && vR) return { id: 'closed', text: `The consonant stays with the vowel before it and closes it in: ${ex}` };
+  if (vL && !vR) return { id: 'open', text: `The first part ends with its vowel (an open syllable), so the vowel often says its name: ${ex}` };
+  if (!vL && vR) return { id: 'closed', text: `The consonant stays with the vowel before it and closes it in (a closed syllable): ${ex}` };
   return { id: 'vv', text: `Two vowels side by side that make separate sounds get split: ${ex}` };
 }
 
