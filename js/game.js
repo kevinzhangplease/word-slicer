@@ -189,8 +189,7 @@ export class Game {
     const hit = this.scene.pick(x, y);
     if (!hit) return;
     const p = hit.body.piece;
-    speech.say(this.entry.word.slice(p.start, p.end));
-    p.sq = Math.max(p.sq, 0.1);
+    this.readAlong([{ start: p.start, end: p.end }]);
   }
 
   // ---------- the hand ----------
@@ -293,8 +292,7 @@ export class Game {
       this.hitStop = 0.07;
     }
     audio.cut(sw.f * 2600);
-    const word = this.entry.word;
-    speech.sequence([word.slice(left.piece.start, left.piece.end), word.slice(right.piece.start, right.piece.end)], { rate: 0.9, gap: 90 });
+    this.readAlong([{ start: left.piece.start, end: left.piece.end }, { start: right.piece.start, end: right.piece.end }], { rate: 0.9, gap: 90, hop: false });
     this.setHint();
   }
 
@@ -457,6 +455,31 @@ export class Game {
     this.hintLevel = 1;
   }
 
+  // Read pieces aloud with a highlight: each range [start, end) glows and its piece hops as it is spoken.
+  readAlong(ranges, opts = {}) {
+    const word = this.entry.word;
+    speech.sequence(ranges.map((r) => word.slice(r.start, r.end)), {
+      rate: opts.rate || 0.8,
+      gap: opts.gap || 200,
+      onDone: opts.onDone,
+      onItem: (i, ms) => {
+        const r = ranges[i];
+        this.speaking = { start: r.start, end: r.end, at: performance.now(), dur: ms + 120 };
+        for (const b of this.physics.pieces()) {
+          const p = b.piece;
+          if (p.start >= r.start && p.end <= r.end) {
+            p.sq = Math.max(p.sq, 0.12);
+            if (opts.hop !== false && Math.abs(b.velocity.y) < 0.05 && b !== this.held) b.velocity.y = 1.1;
+          }
+        }
+      },
+    });
+  }
+
+  piecesInOrder() {
+    return this.physics.pieces().sort((a, b) => a.piece.start - b.piece.start).map((b) => ({ start: b.piece.start, end: b.piece.end }));
+  }
+
   // Glow strength (0..1) for one letter: hint glows and the read-along highlight.
   glowFor(gi, now) {
     let g = 0;
@@ -499,20 +522,14 @@ export class Game {
     $('#score').textContent = String(this.settings.score);
     audio.good();
     this.fx.confetti(this.scene.size.W, [...this.theme.chips, this.theme.vowel, this.theme.consonant]);
-    const ps = this.physics.pieces().sort((a, b) => a.piece.start - b.piece.start);
-    ps.forEach((b, i) => setTimeout(() => {
-      if (!this.physics.world.bodies.includes(b)) return;
-      b.velocity.y = Math.max(b.velocity.y, 2.2);
-    }, 180 + i * 140));
-    const items = this.cuts.size ? [...this.partsFor(this.cuts), this.entry.word] : [this.entry.word];
-    speech.sequence(items, { rate: 0.8, gap: 220 });
+    // read each piece in order (each hops as it is read), then the whole word
+    const whole = { start: 0, end: this.entry.word.length };
+    this.readAlong(this.cuts.size ? [...this.piecesInOrder(), whole] : [whole], { rate: 0.8, gap: 220 });
   }
 
   hear() {
-    const ps = this.physics.pieces().sort((a, b) => a.piece.start - b.piece.start);
-    const word = this.entry.word;
-    speech.sequence([word, ...(ps.length > 1 ? ps.map((b) => word.slice(b.piece.start, b.piece.end)) : [])], { rate: 0.8, gap: 200 });
-    ps.forEach((b, i) => setTimeout(() => { if (b.piece) b.piece.sq = Math.max(b.piece.sq, 0.14); }, 700 + i * 650));
+    const pieces = this.piecesInOrder();
+    this.readAlong([{ start: 0, end: this.entry.word.length }, ...(pieces.length > 1 ? pieces : [])]);
   }
 
   // ---------- result card ----------
