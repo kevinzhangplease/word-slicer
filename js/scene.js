@@ -55,6 +55,8 @@ export class Scene3D {
     this.pieces = new Map();
     this.tileMeshes = [];
     this.letterCache = new Map();
+    this.normalCache = new Map();
+    this.faceNormalCache = new Map();
     this.raycaster = new THREE.Raycaster();
     this.size = { W: 1, H: 1 };
     this.margins = { left: 20, right: 20, top: 70, bottom: 100 };
@@ -109,6 +111,7 @@ export class Scene3D {
     this.cVowel = new THREE.Color(theme.vowel);
     this.cCons = new THREE.Color(theme.consonant);
     this.cGlow = new THREE.Color(theme.dark ? theme.glow : '#ffc23d');
+    this.cFresh = new THREE.Color(lighten(theme.block.base, 0.5));
     const r = this.renderer;
     r.toneMappingExposure = theme.exposure;
     r.setClearColor(theme.table);
@@ -172,39 +175,131 @@ export class Scene3D {
     return new THREE.MeshPhysicalMaterial({ color, roughness: 0.32, clearcoat: 0.9, clearcoatRoughness: 0.18 });
   }
 
-  letterTexture(ch, ink) {
-    const key = `${ch}|${ink}`;
-    let t = this.letterCache.get(key);
-    if (t) return t;
+  // Glyph + engraved face border, drawn by `paint` into a canvas the size of the block face decal.
+  glyphCanvas(ch, paint) {
     const W = 340;
     const H = Math.round((W * (TILE.h - 0.03)) / (TILE.w - 0.03));
     const c = document.createElement('canvas');
     c.width = W;
     c.height = H;
     const x = c.getContext('2d');
-    const light = isLight(ink);
-    // engraved border of the block's face
-    const m = 18;
-    x.lineWidth = 5;
-    x.strokeStyle = light ? 'rgba(0,0,0,.28)' : 'rgba(255,255,255,.5)';
-    roundRectPath(x, m + 2, m + 2, W - 2 * m, H - 2 * m, 26); x.stroke();
-    x.strokeStyle = light ? 'rgba(255,255,255,.22)' : 'rgba(0,0,0,.2)';
-    roundRectPath(x, m, m, W - 2 * m, H - 2 * m, 26); x.stroke();
-    if (this.theme && this.theme.block.outline) {
-      x.strokeStyle = this.theme.block.outline;
-      x.lineWidth = 9;
-      roundRectPath(x, m - 6, m - 6, W - 2 * m + 12, H - 2 * m + 12, 30); x.stroke();
-    }
-    x.font = `700 ${Math.round(H * 0.98)}px ${FONT}`;
-    x.textAlign = 'center';
-    x.textBaseline = 'middle';
-    const ty = H * 0.54;
-    x.fillStyle = light ? 'rgba(0,0,0,.34)' : 'rgba(255,255,255,.6)';
-    x.fillText(ch, W / 2 + 3, ty + 4);
-    x.fillStyle = ink;
-    x.fillText(ch, W / 2, ty);
+    paint(x, W, H, () => {
+      x.font = `700 ${Math.round(H * 0.98)}px ${FONT}`;
+      x.textAlign = 'center';
+      x.textBaseline = 'middle';
+      x.fillText(ch, W / 2, H * 0.54);
+    });
+    return c;
+  }
+
+  // Colour of the carved letter (its groove) plus a thin carved border around the face.
+  letterTexture(ch, ink) {
+    const key = `${ch}|${ink}`;
+    let t = this.letterCache.get(key);
+    if (t) return t;
+    const outline = this.theme && this.theme.block.outline;
+    const c = this.glyphCanvas(ch, (x, W, H, glyph) => {
+      const m = 18;
+      x.lineWidth = 5;
+      x.strokeStyle = isLight(ink) ? 'rgba(0,0,0,.3)' : 'rgba(255,255,255,.45)';
+      roundRectPath(x, m, m, W - 2 * m, H - 2 * m, 26); x.stroke();
+      if (outline) {
+        x.strokeStyle = outline;
+        x.lineWidth = 9;
+        roundRectPath(x, m - 6, m - 6, W - 2 * m + 12, H - 2 * m + 12, 30); x.stroke();
+      }
+      x.fillStyle = ink;
+      glyph();
+    });
     t = this.texture(c, false);
     this.letterCache.set(key, t);
+    return t;
+  }
+
+  // Height map of the letter + face border (white = carved in), at decal size.
+  heightCanvas(ch) {
+    return this.glyphCanvas(ch, (x, W, H, glyph) => {
+      x.fillStyle = '#000';
+      x.fillRect(0, 0, W, H);
+      x.fillStyle = '#fff';
+      x.strokeStyle = '#fff';
+      x.lineWidth = 5;
+      roundRectPath(x, 18, 18, W - 36, H - 36, 26); x.stroke();
+      glyph();
+    });
+  }
+
+  // Blur a height canvas (so grooves get sloped walls) and turn it into a tangent-space normal map.
+  normalFrom(c) {
+    const W = c.width;
+    const H = c.height;
+    const x = c.getContext('2d');
+    const img = x.getImageData(0, 0, W, H);
+    let h = new Float32Array(W * H);
+    for (let i = 0; i < W * H; i++) h[i] = img.data[i * 4] / 255;
+    const blur = (src, r) => { // separable box blur
+      const tmp = new Float32Array(W * H);
+      const out = new Float32Array(W * H);
+      for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) {
+        let sum = 0; let n = 0;
+        for (let k = -r; k <= r; k++) { const q = xx + k; if (q >= 0 && q < W) { sum += src[y * W + q]; n++; } }
+        tmp[y * W + xx] = sum / n;
+      }
+      for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) {
+        let sum = 0; let n = 0;
+        for (let k = -r; k <= r; k++) { const q = y + k; if (q >= 0 && q < H) { sum += tmp[q * W + xx]; n++; } }
+        out[y * W + xx] = sum / n;
+      }
+      return out;
+    };
+    h = blur(blur(h, 3), 3);
+    const S = 7; // groove steepness
+    const at = (a, b) => h[Math.min(H - 1, Math.max(0, b)) * W + Math.min(W - 1, Math.max(0, a))];
+    for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) {
+      // height = -h (carved in); texture v runs opposite to canvas y
+      let nx = (at(xx + 1, y) - at(xx - 1, y)) * 0.5 * S;
+      let ny = -(at(xx, y + 1) - at(xx, y - 1)) * 0.5 * S;
+      const l = Math.hypot(nx, ny, 1);
+      nx /= l; ny /= l;
+      const i = (y * W + xx) * 4;
+      img.data[i] = (nx * 0.5 + 0.5) * 255;
+      img.data[i + 1] = (ny * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (0.5 / l + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+    x.putImageData(img, 0, 0);
+    const t = new THREE.CanvasTexture(c);
+    t.anisotropy = this.maxAniso;
+    return t;
+  }
+
+  // Normal map for the letter decal (shades the inside of the groove).
+  letterNormal(ch) {
+    let t = this.normalCache.get(ch);
+    if (!t) { t = this.normalFrom(this.heightCanvas(ch)); this.normalCache.set(ch, t); }
+    return t;
+  }
+
+  // Normal map for the block's whole front face, so the groove walls show in the wood around each letter.
+  faceNormal(ch) {
+    let t = this.faceNormalCache.get(ch);
+    if (t) return t;
+    const fw = TILE.w * 0.992;
+    const fh = TILE.h * 0.992;
+    const FW = 384;
+    const ppm = FW / fw;
+    const FH = Math.round(fh * ppm);
+    const c = document.createElement('canvas');
+    c.width = FW;
+    c.height = FH;
+    const x = c.getContext('2d');
+    x.fillStyle = '#000';
+    x.fillRect(0, 0, FW, FH);
+    const dw = (TILE.w - 0.03) * ppm;
+    const dh = (TILE.h - 0.03) * ppm;
+    x.drawImage(this.heightCanvas(ch), (FW - dw) / 2, (FH - dh) / 2, dw, dh);
+    t = this.normalFrom(c);
+    this.faceNormalCache.set(ch, t);
     return t;
   }
 
@@ -350,20 +445,25 @@ export class Scene3D {
     for (let i = 0; i < p.len; i++) {
       const gi = p.start + i;
       const baseMat = this.baseMaterial(gi);
-      const mesh = new THREE.Mesh(this.tileGeo, baseMat);
+      // one material per face of the rounded box: [+x, -x, +y, -y, +z (front, carved), -z]
+      const mats = [baseMat, baseMat, baseMat, baseMat, baseMat, baseMat];
+      const mesh = new THREE.Mesh(this.tileGeo, mats);
       mesh.position.x = -(p.len * TILE.w) / 2 + (i + 0.5) * TILE.w;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       mesh.userData = { bodyId: body.id, index: i };
+      const ch = this.game.letters[gi].ch;
       const decalMat = new THREE.MeshStandardMaterial({
-        map: this.letterTexture(this.game.letters[gi].ch, this.theme.block.ink),
-        transparent: true, roughness: 0.75, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+        map: this.letterTexture(ch, this.theme.block.ink),
+        normalMap: this.letterNormal(ch),
+        normalScale: new THREE.Vector2(1.6, 1.6),
+        transparent: true, roughness: 0.8, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
       });
       const decal = new THREE.Mesh(this.decalGeo, decalMat);
       decal.position.z = (TILE.d * 0.992) / 2 + 0.0006;
       mesh.add(decal);
       vis.add(mesh);
-      tiles.push({ mesh, decalMat, baseMat, paintMat: null, gi, state: 'n' });
+      tiles.push({ mesh, mats, decalMat, baseMat, paintMat: null, cur: baseMat, front: null, frontSrc: null, side: {}, gi, ch, state: 'n' });
     }
     this.scene.add(group);
     const e = { group, vis, tiles, body };
@@ -377,8 +477,28 @@ export class Scene3D {
       if (t.baseMat.map) t.baseMat.map.dispose();
       t.baseMat.dispose();
       if (t.paintMat) t.paintMat.dispose();
+      if (t.front) t.front.dispose();
+      for (const m of Object.values(t.side)) m.dispose();
       t.decalMat.dispose();
     }
+  }
+
+  // A face exposed by a fresh cut shows light, raw wood for a moment, then fades back to the block's material.
+  sideMaterial(t, key, cur, age) {
+    const FRESH = 2200;
+    if (age > FRESH) return cur;
+    let m = t.side[key];
+    if (!m || m.userData.src !== cur) {
+      if (m) m.dispose();
+      m = cur.clone();
+      m.userData.src = cur;
+      t.side[key] = m;
+    }
+    const k = 1 - age / FRESH;
+    m.color.copy(cur.color).lerp(this.cFresh, 0.85 * k);
+    m.emissive.copy(this.cFresh);
+    m.emissiveIntensity = 0.12 * k;
+    return m;
   }
 
   sync(now) {
@@ -405,10 +525,10 @@ export class Scene3D {
             const col = letter.paint === 'v' ? th.vowel : th.consonant;
             if (t.paintMat) t.paintMat.dispose();
             t.paintMat = this.paintMaterial(col);
-            t.mesh.material = t.paintMat;
+            t.cur = t.paintMat;
             t.decalMat.map = this.letterTexture(letter.ch, isLight(col) ? '#1b1b1b' : '#ffffff');
           } else {
-            t.mesh.material = t.baseMat;
+            t.cur = t.baseMat;
             t.decalMat.map = this.letterTexture(letter.ch, th.block.ink);
           }
           t.decalMat.needsUpdate = true;
@@ -430,12 +550,27 @@ export class Scene3D {
         if (!base.userData.e0) base.userData.e0 = { c: base.emissive.clone(), i: base.emissiveIntensity };
         base.emissive.copy(base.userData.e0.c); // the paint material resets itself above
         base.emissiveIntensity = base.userData.e0.i;
+        const cur = t.cur;
         const glow = game.glowFor(t.gi, now);
         if (glow > 0) {
-          const mat = t.mesh.material;
-          mat.emissive.copy(this.cGlow);
-          mat.emissiveIntensity = Math.max(mat === t.paintMat ? mat.emissiveIntensity : 0, glow * 0.55);
+          cur.emissive.copy(this.cGlow);
+          cur.emissiveIntensity = Math.max(cur === t.paintMat ? cur.emissiveIntensity : 0, glow * 0.55);
         }
+        // carved front face follows the current material
+        if (t.frontSrc !== cur) {
+          if (t.front) t.front.dispose();
+          t.front = cur.clone();
+          t.front.normalMap = this.faceNormal(t.ch);
+          t.front.normalScale = new THREE.Vector2(2.2, 2.2);
+          t.frontSrc = cur;
+        }
+        t.front.color.copy(cur.color);
+        t.front.emissive.copy(cur.emissive);
+        t.front.emissiveIntensity = cur.emissiveIntensity;
+        t.mats[0] = this.sideMaterial(t, 'R', cur, now - (letter.freshR || -1e9));
+        t.mats[1] = this.sideMaterial(t, 'L', cur, now - (letter.freshL || -1e9));
+        t.mats[2] = t.mats[3] = t.mats[5] = cur;
+        t.mats[4] = t.front;
         if (calm && s === 1) s = 1 + 0.012 * Math.sin(now * 0.0022 + t.gi * 0.8);
         t.mesh.scale.y = s;
         t.mesh.position.y = ((s - 1) * TILE.h) / 2;

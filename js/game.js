@@ -281,6 +281,7 @@ export class Game {
     const b = this.scene.faceToWorld(body, lx, TILE.h * 0.62);
     if (this.held === body) this.release();
     const { left, right } = this.physics.splitPiece(body, k, sw, performance.now());
+    this.letters[gap - 1].freshR = this.letters[gap].freshL = performance.now(); // freshly cut faces
     this.cuts.add(gap);
     this.history.push(gap);
     this.clearMarks();
@@ -305,6 +306,7 @@ export class Game {
     if (this.held && this.physics.magnets.cluster(this.held).includes(body)) this.release();
     const now = performance.now();
     this.physics.magnets.separate(cand.joint, now);
+    this.letters[cand.joint.x.piece.end - 1].freshR = this.letters[cand.joint.y.piece.start].freshL = now;
     for (const q of [cand.joint.x, cand.joint.y]) {
       q.velocity.y += TILE.w * (5 + sw.f * 2); // the same little pop a cut gives
       q.piece.noCutUntil = now + 300; // one stroke cuts one joint, not the neighbour's next gap too
