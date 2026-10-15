@@ -212,6 +212,37 @@ select {
   .tool { font-size: .62rem; }
 }
 
+/* ---- My words dialog ---- */
+#words-dialog {
+  width: min(92vw, 460px);
+  padding: 18px 20px;
+  border-radius: 22px;
+  border: 3px solid var(--border);
+  background: var(--panel);
+  color: var(--fg);
+  font-family: var(--font);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .35);
+}
+#words-dialog::backdrop { background: rgba(0, 0, 0, .35); }
+#words-dialog h2 { margin: 0 0 6px; font-size: 1.2rem; }
+#words-dialog p { margin: 0 0 10px; font-size: .85rem; line-height: 1.45; }
+#words-dialog code { font-size: .85rem; background: rgba(0, 0, 0, .06); padding: 1px 4px; border-radius: 5px; }
+#words-text {
+  width: 100%;
+  font: 600 1rem/1.5 ui-monospace, Menlo, Consolas, monospace;
+  padding: 10px;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  background: rgba(255, 255, 255, .85);
+  color: #222;
+  resize: vertical;
+}
+#words-errors { margin: 8px 0 0; padding-left: 18px; color: #b3141b; font-size: .85rem; }
+#words-errors:empty { display: none; }
+#words-dialog .row { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+#words-dialog .spacer { flex: 1; }
+#words-dialog .btn { min-height: 44px; }
+
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }

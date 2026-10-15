@@ -1,5 +1,5 @@
 // Sanity checks for the word list. Run: node scripts/check-words.mjs
-import { WORDS, isVowel, gapsOf, allowedSplits } from '../js/words.js';
+import { WORDS, isVowel, gapsOf, allowedSplits, ruleFor, mistakeFor, parseList, parseLine } from '../js/words.js';
 
 let failed = 0;
 const fail = (m) => { failed++; console.error('FAIL', m); };
@@ -31,6 +31,31 @@ for (const [split, want] of checks) {
   const got = kinds(w);
   if (got !== want) fail(`${w}: expected ${want} got ${got}`);
 }
+
+// every syllable break has a rule, and the rule is the expected one for clear cases
+const ruleIds = {};
+for (const e of WORDS) {
+  for (const g of gapsOf(e.parts)) {
+    const r = ruleFor(e, g);
+    if (!r) fail(`no rule for ${e.word} gap ${g}`);
+    else ruleIds[r.id] = (ruleIds[r.id] || 0) + 1;
+  }
+}
+const ruleOf = (w, gap) => ruleFor(WORDS.find((x) => x.word === w), gap).id;
+const want = [['rabbit', 3, 'double'], ['tiger', 2, 'open'], ['table', 2, 'cle'], ['lemon', 3, 'closed'],
+  ['lion', 2, 'vv'], ['rainbow', 4, 'compound'], ['vacation', 4, 'suffix'], ['pencil', 3, 'vccv'], ['flower', 4, 'team']];
+for (const [w, g, id] of want) if (ruleOf(w, g) !== id) fail(`${w} gap ${g}: expected ${id}, got ${ruleOf(w, g)}`);
+const ele = WORDS.find((x) => x.word === 'elephant');
+if (!/ph/.test(mistakeFor(ele, 4, new Set([4])))) fail('elephant cut inside "ph" should explain the digraph');
+if (!/no vowel/.test(mistakeFor(WORDS.find((x) => x.word === 'basket'), 2, new Set([2, 3])))) fail('"s" alone should be called out as having no vowel');
+
+// custom lists
+const pl = parseList('but-ter+fly\nro-bot|rob-ot\nhel lo\nbad--word\nx1-y\n\nsun+set, rab-bit');
+if (pl.entries.length !== 5) fail(`custom list: expected 5 good words, got ${pl.entries.map((e) => e.word)}`);
+if (pl.errors.length !== 2) fail(`custom list: expected 2 errors, got ${pl.errors}`);
+if (!parseLine('rob-ot|ro-bat').error) fail('alternative that spells a different word must be rejected');
+if (WORDS.some((e) => /favor|pajam/.test(e.word))) fail('US spelling left in the list');
+console.log('rules:', ruleIds);
 
 const counts = { easy: 0, medium: 0, hard: 0 };
 WORDS.forEach((e) => counts[e.level]++);

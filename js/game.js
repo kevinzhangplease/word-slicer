@@ -15,7 +15,7 @@ const STORE = 'wordslicer.v1';
 const $ = (s) => document.querySelector(s);
 
 function loadSettings() {
-  const d = { level: 'medium', theme: 'wood', tasks: 'both', muted: false, score: 0 };
+  const d = { level: 'medium', theme: 'wood', tasks: 'both', muted: false, score: 0, custom: '' };
   try { return { ...d, ...JSON.parse(localStorage.getItem(STORE) || '{}') }; } catch (_) { return d; }
 }
 
@@ -50,6 +50,21 @@ export class Game {
     this.scene = new Scene3D(stage, this);
     this.overlay = new Overlay(overlayCanvas, this);
     this.input = new Input(stage, this);
+
+    // A shared link (?words=rab-bit,sun+set) plays that list for this visit without touching saved settings.
+    this.level = this.settings.level;
+    // (read raw: URLSearchParams would turn the compound "+" into a space)
+    const m = window.location.search.match(/[?&]words=([^&]*)/);
+    let shared = null;
+    try { shared = m ? decodeURIComponent(m[1]) : null; } catch (_) { shared = null; }
+    const fromLink = shared ? Words.parseList(shared).entries : [];
+    if (fromLink.length) {
+      Words.setCustom(fromLink);
+      this.level = 'custom';
+    } else {
+      Words.setCustom(Words.parseList(this.settings.custom).entries);
+      if (this.level === 'custom' && !Words.customWords().length) this.level = 'medium';
+    }
 
     audio.muted = speech.muted = this.settings.muted;
     applyThemeCSS(this.theme);
@@ -109,7 +124,7 @@ export class Game {
 
   // ---------- words ----------
   newWord() {
-    const entry = Words.pickWord(this.settings.level, this.maxLetters(), this.recent);
+    const entry = Words.pickWord(this.level, this.maxLetters(), this.recent);
     this.recent.push(entry.word);
     if (this.recent.length > 12) this.recent.shift();
     this.setEntry(entry);
@@ -448,14 +463,20 @@ export class Game {
     const level = $('#level');
     const tasks = $('#tasks');
     const theme = $('#theme');
-    level.value = s.level;
+    level.value = this.level;
     tasks.value = s.tasks;
     for (const [k, t] of Object.entries(THEMES)) theme.add(new Option(t.name, k));
     theme.value = s.theme;
     $('#score').textContent = String(s.score);
     this.syncMute();
 
-    level.addEventListener('change', () => { s.level = level.value; this.save(); this.newWord(); });
+    level.addEventListener('change', () => {
+      if (level.value === 'custom' && !Words.customWords().length) { level.value = this.level; this.openWords(); return; }
+      this.level = s.level = level.value;
+      this.save();
+      this.newWord();
+    });
+    this.bindWordsDialog();
     tasks.addEventListener('change', () => { s.tasks = tasks.value; this.save(); this.clearMarks(); this.hideResult(); this.setHint(); });
     theme.addEventListener('change', () => {
       s.theme = theme.value;
@@ -491,6 +512,64 @@ export class Game {
       else if (k === 'h') this.hear();
     });
     this.setTool('knife');
+  }
+
+  // ---------- My words ----------
+  openWords() {
+    const dlg = $('#words-dialog');
+    const list = Words.customWords();
+    $('#words-text').value = list.length ? list.map((e) => this.lineFor(e)).join('\n') : this.settings.custom;
+    $('#words-errors').innerHTML = '';
+    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+    $('#words-text').focus();
+  }
+
+  // Write an entry back in list syntax: syllables with "-", compound joins with "+", alternatives after "|".
+  lineFor(e) {
+    let out = '';
+    let n = 0;
+    e.parts.forEach((p, i) => {
+      if (i) out += e.compound && e.compound.has(n) ? '+' : '-';
+      out += p;
+      n += p.length;
+    });
+    return [out, ...e.alts.map((a) => a.join('-'))].join('|');
+  }
+
+  bindWordsDialog() {
+    const dlg = $('#words-dialog');
+    const close = () => (dlg.close ? dlg.close() : dlg.removeAttribute('open'));
+    $('#words-btn').addEventListener('click', () => this.openWords());
+    $('#words-cancel').addEventListener('click', close);
+    $('#words-save').addEventListener('click', () => {
+      const text = $('#words-text').value;
+      const { entries, errors } = Words.parseList(text);
+      const errBox = $('#words-errors');
+      errBox.innerHTML = '';
+      const show = (msgs) => msgs.forEach((m) => { const li = document.createElement('li'); li.textContent = m; errBox.append(li); });
+      if (errors.length) { show(errors); return; }
+      if (!entries.length) { show(['Type at least one word, with "-" between its syllables.']); return; }
+      Words.setCustom(entries);
+      this.settings.custom = entries.map((e) => this.lineFor(e)).join('\n');
+      this.level = this.settings.level = 'custom';
+      $('#level').value = 'custom';
+      this.save();
+      close();
+      this.newWord();
+    });
+    $('#words-share').addEventListener('click', async () => {
+      const { entries, errors } = Words.parseList($('#words-text').value);
+      if (errors.length || !entries.length) { $('#words-save').click(); return; }
+      const url = `${window.location.origin}${window.location.pathname}?words=${encodeURIComponent(entries.map((e) => this.lineFor(e)).join(','))}`;
+      const btn = $('#words-share');
+      try {
+        await navigator.clipboard.writeText(url);
+        btn.textContent = 'Link copied!';
+      } catch (_) {
+        window.prompt('Copy this link:', url);
+      }
+      setTimeout(() => { btn.textContent = 'Copy share link'; }, 2000);
+    });
   }
 
   syncMute() {

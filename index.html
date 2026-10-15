@@ -29,8 +29,10 @@
         <option value="medium">Medium · 3 syllables</option>
         <option value="hard">Hard · 4+ syllables</option>
         <option value="mixed">Mixed</option>
+        <option value="custom">My words</option>
       </select>
     </label>
+    <button id="words-btn" class="icon-btn" title="My words: type your own word list" aria-label="Edit my words">✎</button>
     <label>Tasks
       <select id="tasks">
         <option value="both">Slice + paint</option>
@@ -42,6 +44,20 @@
     <div class="score" title="Words completed">⭐ <span id="score">0</span></div>
     <button id="mute" class="icon-btn" aria-pressed="false" aria-label="Sound on">🔊</button>
   </header>
+
+  <dialog id="words-dialog" aria-labelledby="words-title">
+    <h2 id="words-title">My words</h2>
+    <p>One word per line. Put <b>-</b> between syllables (<code>but-ter</code>), <b>+</b> between the two words of a
+      compound (<code>rain+bow</code>), and <b>|</b> before another accepted split (<code>ro-bot|rob-ot</code>).</p>
+    <textarea id="words-text" rows="8" spellcheck="false" autocapitalize="off" placeholder="rab-bit&#10;rain+bow&#10;el-e-phant"></textarea>
+    <ul id="words-errors" aria-live="polite"></ul>
+    <div class="row">
+      <button id="words-share" class="btn">Copy share link</button>
+      <span class="spacer"></span>
+      <button id="words-cancel" class="btn">Cancel</button>
+      <button id="words-save" class="btn primary">Use these words</button>
+    </div>
+  </dialog>
 
   <section id="result" hidden aria-live="assertive">
     <h2 id="result-title"></h2>
